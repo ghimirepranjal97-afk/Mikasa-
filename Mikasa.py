@@ -7,15 +7,14 @@ _INVITE_CACHE = {}
 from pathlib import Path
 from typing import Optional
 
-# Ask for bot token every time bot starts
-print("\nyo paste the token:")
-TOKEN = input("Token: ").strip()
+# Get bot token from Render environment variables
+TOKEN = os.getenv("TOKEN", "").strip()
 
 if not TOKEN:
-    print("bro no token found, set TOKEN in railway variables")
+    print("ERROR: TOKEN environment variable is missing!")
     sys.exit(1)
 
-print("\nToken received. Starting your bot...\n")
+print("Token received. Starting your bot...\n")
 
 # ── Core imports (restored) ──────────────────────────────────────────────
 import asyncio
