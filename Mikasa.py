@@ -40,7 +40,8 @@ from discord import app_commands
 from discord.ext import commands, tasks
 
 # ── Constants ────────────────────────────────────────────────────────────
-OWNER_ID = 827821383417331732
+OWNER_ID = 827821383417331732  # kept for notification targets; both owners are equal via OWNER_IDS
+OWNER_IDS: set[int] = {827821383417331732, 1445625395649974388}  # both full owners
 PREFIX = ","
 _ROB_COOLDOWNS: dict = {}  # per-user rob cooldown timestamps
 BOT_NAME = "Mikasa 2.0"
