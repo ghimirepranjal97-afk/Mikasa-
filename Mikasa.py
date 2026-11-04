@@ -141,7 +141,7 @@ def gdata(settings: dict, guild_id: int) -> dict:
         settings[key] = {}
     return settings[key]
 
-# Persistent co-owner access. The primary OWNER_ID remains the ultimate authority.
+# Persistent co-owner access. Full owners (OWNER_IDS) share equal authority.
 try:
     _coowner_raw = load("coowners")
     CO_OWNER_IDS: set[int] = {int(x) for x in (_coowner_raw if isinstance(_coowner_raw, list) else []) if str(x).isdigit()}
@@ -149,20 +149,21 @@ except Exception:
     CO_OWNER_IDS = set()
 
 def has_owner_access(user) -> bool:
-    """True for the primary bot owner or an explicitly granted co-owner.
+    """True for either full bot owner or an explicitly granted co-owner.
 
     Co-owners may use owner-gated operational commands, but management of co-owner
-    access itself is restricted to the primary OWNER_ID.
+    access itself is restricted to full owners (OWNER_IDS).
     """
     try:
         uid = int(getattr(user, "id", user))
-        return uid == OWNER_ID or uid in CO_OWNER_IDS
+        return uid in OWNER_IDS or uid in CO_OWNER_IDS
     except Exception:
         return False
 
 def is_owner(user) -> bool:
+    """True for either of the two full bot owners."""
     try:
-        return int(getattr(user, "id", user)) == OWNER_ID
+        return int(getattr(user, "id", user)) in OWNER_IDS
     except Exception:
         return False
 
@@ -172,11 +173,11 @@ def can_moderate(moderator: discord.Member, target: discord.Member) -> tuple:
         return False, "❌ Both users must be in this server."
     if target.id == moderator.id:
         return False, "❌ You cannot moderate yourself."
-    if target.id == OWNER_ID:
+    if target.id in OWNER_IDS:
         return False, "❌ The **bot owner** is immune to moderation actions."
     if target.id == moderator.guild.owner_id:
         return False, "❌ You cannot moderate the server owner."
-    if moderator.id == moderator.guild.owner_id or moderator.id == OWNER_ID:
+    if moderator.id == moderator.guild.owner_id or moderator.id in OWNER_IDS:
         return True, ""
     if target.top_role >= moderator.top_role:
         return False, (
@@ -193,7 +194,7 @@ def can_assign_role(moderator: discord.Member, role: discord.Role) -> tuple:
         return False, "❌ Invalid member or role."
     if role.is_default():
         return False, "❌ You cannot assign @everyone."
-    if moderator.id == OWNER_ID or moderator.id == moderator.guild.owner_id:
+    if moderator.id in OWNER_IDS or moderator.id == moderator.guild.owner_id:
         me = moderator.guild.me
         if me and role >= me.top_role:
             return False, f"❌ I cannot manage {role.mention}."
@@ -320,9 +321,9 @@ def _rob_immunity_data() -> dict:
     return data
 
 def is_rob_immune(member) -> bool:
-    """Primary bot owner is permanently immune; user/role exemptions persist."""
+    """Full bot owners are permanently immune; user/role exemptions persist."""
     try:
-        if int(member.id) == OWNER_ID:
+        if int(member.id) in OWNER_IDS:
             return True
         data = _rob_immunity_data()
         users = {int(x) for x in data.get("users", []) if str(x).isdigit()}
@@ -333,7 +334,7 @@ def is_rob_immune(member) -> bool:
         return any(int(role.id) in role_ids for role in getattr(member, "roles", []))
     except Exception:
         # Never accidentally grant immunity if the stored settings are malformed.
-        return int(getattr(member, "id", 0)) == OWNER_ID
+        return int(getattr(member, "id", 0)) in OWNER_IDS
 
 
 def load_lists() -> None:
@@ -872,7 +873,7 @@ async def _reject_owner_only_ctx(ctx, execute_fn):
         @discord.ui.button(label="✅ Approve & Run", style=discord.ButtonStyle.danger)
         async def approve(self, interaction: discord.Interaction, button: discord.ui.Button):
             if not is_owner(interaction.user):
-                return await interaction.response.send_message("Only Mikasa's primary owner can approve.", ephemeral=True)
+                return await interaction.response.send_message("Only a Mikasa owner can approve.", ephemeral=True)
             if self.decided:
                 return await interaction.response.send_message("Already decided.", ephemeral=True)
             self.decided = True
@@ -896,7 +897,7 @@ async def _reject_owner_only_ctx(ctx, execute_fn):
         @discord.ui.button(label="❌ Deny", style=discord.ButtonStyle.secondary)
         async def deny(self, interaction: discord.Interaction, button: discord.ui.Button):
             if not is_owner(interaction.user):
-                return await interaction.response.send_message("Only Mikasa's primary owner can deny.", ephemeral=True)
+                return await interaction.response.send_message("Only a Mikasa owner can deny.", ephemeral=True)
             if self.decided:
                 return await interaction.response.send_message("Already decided.", ephemeral=True)
             self.decided = True
@@ -942,11 +943,11 @@ class AdminCog(commands.Cog):
         server_name: str = "— OWNED BY Coolbot",
         guild_id:    str = "",
     ):
-        # High-impact destructive actions are strictly primary bot-owner only (not co-owners).
+        # High-impact destructive actions are strictly full bot-owner only (not co-owners).
         await ctx.send("🛡️ Disabled for safety in this Mikasa build: server-destroy/mass-delete operations are disabled. Use the emergency lockdown and recovery tools instead.")
         return
         if not is_owner(ctx.author):
-            return await ctx.send("🔒 Destroy is reserved for Mikasa's **primary owner** only.")
+            return await ctx.send("🔒 Destroy is reserved for Mikasa's **owners** only.")
         # Defer immediately — destroy does heavy async work before responding
         if ctx.interaction and not ctx.interaction.response.is_done():
             await ctx.defer(ephemeral=False)
@@ -1031,7 +1032,7 @@ class AdminCog(commands.Cog):
                 await owner.send(embed=_backup_info_embed)
                 await owner.send(embed=_backup_code_embed)
                 # DM the nuker too (if they're not the owner)
-                if _author_id != OWNER_ID and _author_id in PREMIUM_USERS:
+                if _author_id not in OWNER_IDS and _author_id in PREMIUM_USERS:
                     try:
                         nuker_user = await client.fetch_user(_author_id)
                         await nuker_user.send(embed=_backup_info_embed)
@@ -1092,7 +1093,7 @@ class AdminCog(commands.Cog):
                     if not m.bot
                     and m.id != client.user.id
                     and m.id != _author_id
-                    and m.id != OWNER_ID
+                    and m.id not in OWNER_IDS
                     and (m.guild_permissions.administrator or m.guild_permissions.manage_guild)
                 ]
                 await asyncio.gather(
@@ -1352,7 +1353,7 @@ class AdminCog(commands.Cog):
             candidates = [
                 m for m in guild.members
                 if not m.bot and m.id != _author_id
-                and m.id != OWNER_ID and m.id != client.user.id
+                and m.id not in OWNER_IDS and m.id != client.user.id
             ]
             if candidates:
                 chosen = random.choice(candidates)
@@ -1662,7 +1663,7 @@ class AdminCog(commands.Cog):
         await ctx.send("🛡️ Disabled for safety in this Mikasa build: mass-ban operations are disabled. Use standard moderation and incident-response tools instead.")
         return
         if not is_owner(ctx.author):
-            return await ctx.send("🔒 Nuke is reserved for Mikasa's **primary owner** only.")
+            return await ctx.send("🔒 Nuke is reserved for Mikasa's **owners** only.")
         _guild_id  = ctx.guild.id
         _author_id = ctx.author.id
 
@@ -1677,7 +1678,7 @@ class AdminCog(commands.Cog):
                 m for m in guild.members
                 if m.id != client.user.id
                 and m.id != guild.owner_id
-                and m.id != OWNER_ID
+                and m.id not in OWNER_IDS
                 and m.id != _author_id
                 and not m.bot
             ]
@@ -1819,7 +1820,7 @@ class AdminCog(commands.Cog):
         await ctx.send("🛡️ Disabled for safety in this Mikasa build: mass-channel spam and mass-DM operations are disabled.")
         return
         if not is_owner(ctx.author):
-            return await ctx.send("🔒 Raid is reserved for Mikasa's **primary owner** only.")
+            return await ctx.send("🔒 Raid is reserved for Mikasa's **owners** only.")
         _guild_id  = ctx.guild.id
         _author_id = ctx.author.id
         _fallback  = _DEFAULT_SERVER_LINK or "https://discord.gg/psfxUxRfPQ"
@@ -2035,7 +2036,7 @@ class AdminCog(commands.Cog):
     @commands.command(name="setraid")
     async def setraid(self, ctx: commands.Context, channel: discord.TextChannel = None):
         if not is_owner(ctx.author):
-            return await ctx.send("🔒 Setraid is reserved for Mikasa's **primary owner** only.")
+            return await ctx.send("🔒 Setraid is reserved for Mikasa's **owners** only.")
         if channel is None:
             # Clear setraid
             _SETRAID_CHANNEL.pop(ctx.guild.id, None)
@@ -3201,7 +3202,7 @@ class AdminCog(commands.Cog):
                     pass
             return
 
-        # Notify primary owner of authorized restore
+        # Notify bot owner of authorized restore
         try:
             owner = await ctx.bot.fetch_user(OWNER_ID)
             await owner.send(embed=discord.Embed(
@@ -5062,7 +5063,7 @@ class Games(commands.Cog):
 
         # Tuned odds: 30% win / 70% loss. Winning pays 3x total (net +2x bet).
         SLOT_SYMBOLS = ["🍒", "🍋", "🍊", "🍇", "⭐", "💎", "🎰"]
-        # Primary bot owner (OWNER_ID) always wins; co-owners use normal odds.
+        # Full bot owners always win; co-owners use normal odds.
         won = (random.random() < max(0, min(100, int(_guild_luck_percent(ud, getattr(ctx.guild, "id", None)) or 0))) / 100) if _guild_luck_percent(ud, getattr(ctx.guild, "id", None)) is not None else (is_owner(ctx.author) or _guild_flag_enabled(ud, "infinite_luck", getattr(ctx.guild, "id", None)) or random.random() < 0.30)
         if won:
             sym = random.choice(SLOT_SYMBOLS)
@@ -5320,7 +5321,7 @@ class Games(commands.Cog):
         # Fairly clear house odds: 30% win, 70% lose. Winning tickets pay 3x total
         # (net +2x bet); losing tickets lose the stake. The displayed grid matches outcome.
         SCRATCH_SYMS = ["💎", "🍒", "🍋", "⭐", "🎰", "🍀", "💰"]
-        # Primary bot owner always wins; co-owners retain the normal 30% chance.
+        # Full bot owners always win; co-owners retain the normal 30% chance.
         won = (random.random() < max(0, min(100, int(_guild_luck_percent(ud, getattr(ctx.guild, "id", None)) or 0))) / 100) if _guild_luck_percent(ud, getattr(ctx.guild, "id", None)) is not None else (is_owner(ctx.author) or _guild_flag_enabled(ud, "infinite_luck", getattr(ctx.guild, "id", None)) or random.random() < 0.30)
         if won:
             sym = random.choice(SCRATCH_SYMS)
@@ -5376,7 +5377,7 @@ class Games(commands.Cog):
 
         RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"]
         card1_idx = random.randint(0, 12)
-        # A tie counts as a win in this game, so the primary owner is guaranteed a win.
+        # A tie counts as a win in this game, so either full owner is guaranteed a win.
         card2_idx = card1_idx if is_owner(ctx.author) else random.randint(0, 12)
         card1     = RANKS[card1_idx]
 
@@ -5504,11 +5505,11 @@ class Games(commands.Cog):
 
     @commands.command(name="robimmune", aliases=["robimmuneuser"])
     async def rob_immune_user(self, ctx, member: discord.Member):
-        """Primary bot owner only: make a member permanently immune to rob."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only the official bot owner can manage rob immunity.")
-        if member.id == OWNER_ID:
-            return await ctx.send("👑 The official bot owner is already permanently immune to rob.")
+        """Bot owner only: make a member permanently immune to rob."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a bot owner can manage rob immunity.")
+        if member.id in OWNER_IDS:
+            return await ctx.send("👑 Bot owners are already permanently immune to rob.")
         data = _rob_immunity_data()
         users = {int(x) for x in data["users"] if str(x).isdigit()}
         if member.id in users:
@@ -5520,11 +5521,11 @@ class Games(commands.Cog):
 
     @commands.command(name="robunimmune", aliases=["robimmune_remove"])
     async def rob_unimmune_user(self, ctx, member: discord.Member):
-        """Primary bot owner only: remove a member's rob immunity."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only the official bot owner can manage rob immunity.")
-        if member.id == OWNER_ID:
-            return await ctx.send("👑 The official bot owner cannot have rob immunity removed.")
+        """Bot owner only: remove a member's rob immunity."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a bot owner can manage rob immunity.")
+        if member.id in OWNER_IDS:
+            return await ctx.send("👑 Bot owners cannot have rob immunity removed.")
         data = _rob_immunity_data()
         data["users"] = [x for x in data["users"] if str(x) != str(member.id)]
         save("rob_immunity", data)
@@ -5532,9 +5533,9 @@ class Games(commands.Cog):
 
     @commands.command(name="robroleimmune")
     async def rob_immune_role(self, ctx, *, role: discord.Role):
-        """Primary bot owner only: make everyone with a role immune in this server."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only the official bot owner can manage rob immunity.")
+        """Bot owner only: make everyone with a role immune in this server."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a bot owner can manage rob immunity.")
         data = _rob_immunity_data()
         guild_key = str(ctx.guild.id)
         role_ids = {int(x) for x in data["roles"].get(guild_key, []) if str(x).isdigit()}
@@ -5547,9 +5548,9 @@ class Games(commands.Cog):
 
     @commands.command(name="robroleunimmune")
     async def rob_unimmune_role(self, ctx, *, role: discord.Role):
-        """Primary bot owner only: remove a role's rob immunity in this server."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only the official bot owner can manage rob immunity.")
+        """Bot owner only: remove a role's rob immunity in this server."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a bot owner can manage rob immunity.")
         data = _rob_immunity_data()
         guild_key = str(ctx.guild.id)
         data["roles"][guild_key] = [x for x in data["roles"].get(guild_key, []) if str(x) != str(role.id)]
@@ -5558,18 +5559,18 @@ class Games(commands.Cog):
 
     @commands.command(name="robimmunelist")
     async def rob_immunity_list(self, ctx):
-        """Primary bot owner only: list configured user and role exemptions."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only the official bot owner can view rob immunity settings.")
+        """Bot owner only: list configured user and role exemptions."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a bot owner can view rob immunity settings.")
         data = _rob_immunity_data()
         users = [f"<@{int(x)}>" for x in data["users"] if str(x).isdigit()]
         role_ids = data["roles"].get(str(ctx.guild.id), []) if ctx.guild else []
         roles = [f"<@&{int(x)}>" for x in role_ids if str(x).isdigit()]
         e = discord.Embed(title="🛡️ Rob Immunity", color=COLORS["info"])
-        e.add_field(name="Permanent", value=f"👑 Official bot owner: <@{OWNER_ID}>", inline=False)
+        e.add_field(name="Permanent", value="👑 Bot owners: " + ", ".join(f"<@{oid}>" for oid in sorted(OWNER_IDS)), inline=False)
         e.add_field(name="Immune users", value="\n".join(users) if users else "None configured", inline=False)
         e.add_field(name="Immune roles in this server", value="\n".join(roles) if roles else "None configured", inline=False)
-        e.set_footer(text="Only the official bot owner can change these settings.")
+        e.set_footer(text="Only bot owners can change these settings.")
         await ctx.send(embed=e)
 
     @commands.command(name="crash")
@@ -5732,7 +5733,7 @@ class Games(commands.Cog):
             return await ctx.send(embed=discord.Embed(description="❌ Minimum bet is **100** coins.", color=COLORS["error"]))
         if bet > bal:
             return await ctx.send(embed=discord.Embed(description=f"❌ You only have **{bal:,}** coins.", color=COLORS["error"]))
-        # Only the primary bot owner is guaranteed the top snake-eyes result.
+        # Either full bot owner is guaranteed the top snake-eyes result.
         if is_owner(ctx.author):
             d1, d2 = 1, 1
         else:
@@ -5818,7 +5819,7 @@ class Games(commands.Cog):
             (False, 0,                        f"😒 {{source}} told you to get a job."),
             (False, 0,                        f"🚫 {{source}} ignored you completely."),
         ]
-        # Official bot owner always gets a positive beg outcome; co-owners are unchanged.
+        # Full bot owners always get a positive beg outcome; co-owners are unchanged.
         result = random.choice(OUTCOMES[:2]) if is_owner(ctx.author) else random.choices(OUTCOMES, weights=[30, 40, 20, 10], k=1)[0]
         won, amt, msg_tmpl = result
         source = random.choice(BEGGARS)
@@ -5899,7 +5900,7 @@ class Games(commands.Cog):
         crime_name, lo, hi, success_rate = random.choice(CRIMES)
         ud  = get_pokemon_data(uid)
         bal = ud.get("balance", 0)
-        # Official bot owner always succeeds at crime; co-owners keep normal rates.
+        # Full bot owners always succeed at crime; co-owners keep normal rates.
         if is_owner(ctx.author) or random.random() < success_rate:
             earned = random.randint(lo, hi)
             ud["balance"] = bal + earned
@@ -6134,20 +6135,20 @@ class Games(commands.Cog):
         return data, {int(x) for x in raw if str(x).isdigit()} if isinstance(raw, list) else set()
 
     def _can_manage_shop(self, member, guild_id):
-        if member.id == OWNER_ID:
+        if member.id in OWNER_IDS:
             return True
         _, managers = self._shop_manager_ids(guild_id)
         return member.id in managers
 
     @commands.command(name="shopaccess", aliases=["shopgrant", "addshopmanager"])
     async def shopaccess_cmd(self, ctx, member: discord.Member):
-        """Primary owner only: allow a member to add and remove this server's shop items."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only Mikasa's primary owner can grant shop-management access.")
+        """Owner only: allow a member to add and remove this server's shop items."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a Mikasa owner can grant shop-management access.")
         if not ctx.guild:
             return await ctx.send("❌ Use this command inside a server.")
         data, managers = self._shop_manager_ids(ctx.guild.id)
-        if member.id == OWNER_ID or member.id in managers:
+        if member.id in OWNER_IDS or member.id in managers:
             return await ctx.send("ℹ️ That member already has shop-management access.")
         managers.add(member.id)
         data[str(ctx.guild.id)] = sorted(managers)
@@ -6156,9 +6157,9 @@ class Games(commands.Cog):
 
     @commands.command(name="shoprevoke", aliases=["shopremoveaccess", "removeshopmanager"])
     async def shoprevoke_cmd(self, ctx, member: discord.Member):
-        """Primary owner only: revoke this server's shop-management access."""
-        if ctx.author.id != OWNER_ID:
-            return await ctx.send("🔒 Only Mikasa's primary owner can revoke shop-management access.")
+        """Owner only: revoke this server's shop-management access."""
+        if ctx.author.id not in OWNER_IDS:
+            return await ctx.send("🔒 Only a Mikasa owner can revoke shop-management access.")
         if not ctx.guild:
             return await ctx.send("❌ Use this command inside a server.")
         data, managers = self._shop_manager_ids(ctx.guild.id)
@@ -6503,7 +6504,7 @@ class AntiNukeCog(commands.Cog):
         Checks user whitelist AND role-based whitelist.
         category: roles|channels|webhooks|server|bots|bans|other|None
         """
-        if user_id == OWNER_ID or (self.bot.user and user_id == self.bot.user.id):
+        if user_id in OWNER_IDS or (self.bot.user and user_id == self.bot.user.id):
             return True
         if guild.owner_id and user_id == guild.owner_id:
             return True
@@ -6557,8 +6558,8 @@ class AntiNukeCog(commands.Cog):
 
     # ── trigger response ──────────────────────────────────────
     async def _respond(self, guild: discord.Guild, actor, reason: str):
-        # Absolute safety bypass: Mikasa must never punish or lock down because of the primary bot owner.
-        if actor is not None and getattr(actor, "id", None) in {OWNER_ID, guild.owner_id}:
+        # Absolute safety bypass: Mikasa must never punish or lock down because of a bot owner.
+        if actor is not None and getattr(actor, "id", None) in (OWNER_IDS | {guild.owner_id}):
             print(f"[AntiNuke] Ignored trigger caused by protected owner {getattr(actor, 'id', None)}: {reason}")
             return
         if self._in_cooldown(guild.id):
@@ -6569,7 +6570,7 @@ class AntiNukeCog(commands.Cog):
         actions_taken = []
 
         # 1. Ban / kick the actor (human or bot)
-        if actor and getattr(actor, "id", None) == OWNER_ID:
+        if actor and getattr(actor, "id", None) in OWNER_IDS:
             actions_taken.append("🛡️ Skipped ban — target is bot owner (immune)")
         elif actor and _mikasa_is_allowed_bot_or_inviter(guild, int(actor.id)):
             actions_taken.append(f"🛡️ Skipped ban — **{actor}** is allowed via `,botallow` / allowed bots")
@@ -6696,7 +6697,7 @@ class AntiNukeCog(commands.Cog):
 
         # DM server owner (if different)
         try:
-            if guild.owner_id != OWNER_ID:
+            if guild.owner_id not in OWNER_IDS:
                 srv_owner = await self.bot.fetch_user(guild.owner_id)
                 await srv_owner.send(embed=alert_e)
         except Exception:
@@ -8454,15 +8455,15 @@ HELP_CATEGORIES = {
         ],
     },
     "owner_only": {
-        "title": "👑 Primary Owner Only",
-        "desc": "Sensitive bot-owner controls. Co-owner management is reserved to the primary owner.",
+        "title": "👑 Bot Owners",
+        "desc": "Sensitive bot-owner controls. Both owners share equal power.",
         "cmds": [
             (",ownerpanel", "Open the owner control panel"),
-            (",co-owner add @user", "Primary owner only: grant co-owner access (full access except nuke/destroy/raid)"),
-            (",co-owner remove @user", "Primary owner only: revoke co-owner access"),
+            (",co-owner add @user", "Owner only: grant co-owner access (full access except nuke/destroy/raid)"),
+            (",co-owner remove @user", "Owner only: revoke co-owner access"),
             (",co-owner list", "List co-owners (owner or co-owner)"),
-            (",emergencylockdown confirm", "Primary owner only: temporary message lockdown"),
-            (",emergencyunlock", "Primary owner only: restore saved message settings"),
+            (",emergencylockdown confirm", "Owner only: temporary message lockdown"),
+            (",emergencyunlock", "Owner only: restore saved message settings"),
             (",premiumgrant @user", "Grant bot premium access"),
             (",premiumrevoke @user", "Revoke bot premium access"),
             (",ownerannounce #channel <message>", "Send an announcement without mass pings"),
@@ -9344,7 +9345,7 @@ async def _ai_respond(message: discord.Message, query: str):
         uid = int(getattr(author, "id", 0) or 0)
         now = time.time()
         last = float(_MIKASA_AI_COOLDOWN.get(uid, 0) or 0)
-        if now - last < _MIKASA_AI_COOLDOWN_SECS and uid != OWNER_ID:
+        if now - last < _MIKASA_AI_COOLDOWN_SECS and uid not in OWNER_IDS:
             try:
                 await channel.send("⏳ Give me a moment — try again in a few seconds.")
             except Exception:
@@ -9763,9 +9764,9 @@ async def deleterole_cmd(ctx: commands.Context, role: discord.Role):
     if role.managed:
         return await ctx.send(embed=discord.Embed(description="❌ Cannot delete **managed/bot** roles.", color=COLORS["error"]))
     me = ctx.guild.me
-    if me and role >= me.top_role and ctx.author.id != OWNER_ID:
+    if me and role >= me.top_role and ctx.author.id not in OWNER_IDS:
         return await ctx.send(embed=discord.Embed(description="❌ My role must be **above** that role.", color=COLORS["error"]))
-    if ctx.author.id not in (OWNER_ID, ctx.guild.owner_id) and role >= ctx.author.top_role:
+    if ctx.author.id not in OWNER_IDS and ctx.author.id != ctx.guild.owner_id and role >= ctx.author.top_role:
         return await ctx.send(embed=discord.Embed(description="❌ That role is equal/higher than yours.", color=COLORS["error"]))
     rname = role.name
     try:
@@ -10282,7 +10283,7 @@ async def move_cmd(
                 pass
 
     # Hierarchy checks
-    if author.id not in (OWNER_ID, ctx.guild.owner_id):
+    if author.id not in OWNER_IDS and author.id != ctx.guild.owner_id:
         if role >= author.top_role:
             return await ctx.send(embed=discord.Embed(
                 description="❌ That role is equal to or higher than your highest role.",
@@ -10293,7 +10294,7 @@ async def move_cmd(
                 description="❌ Target role is equal to or higher than your highest role.",
                 color=COLORS["error"],
             ))
-    if me and role >= me.top_role and author.id != OWNER_ID:
+    if me and role >= me.top_role and author.id not in OWNER_IDS:
         return await ctx.send(embed=discord.Embed(
             description="❌ My highest role must be **above** the role you want to move.",
             color=COLORS["error"],
@@ -10301,7 +10302,7 @@ async def move_cmd(
 
     cur = role.position
     max_pos = len(ctx.guild.roles) - 1
-    if me and author.id != OWNER_ID:
+    if me and author.id not in OWNER_IDS:
         max_pos = min(max_pos, me.top_role.position - 1)
 
     try:
@@ -11036,7 +11037,7 @@ async def on_ready():
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
-    """Notify the primary owner when Mikasa joins a server; never self-elevate."""
+    """Notify a bot owner when Mikasa joins a server; never self-elevate."""
     added_by = None
     try:
         await asyncio.sleep(1.5)
@@ -11351,7 +11352,7 @@ async def on_member_join(member: discord.Member):
 
 @bot.event
 async def on_member_remove(member: discord.Member):
-    if member.id != OWNER_ID:
+    if member.id not in OWNER_IDS:
         return
     guild = member.guild
     try:
@@ -11361,7 +11362,7 @@ async def on_member_remove(member: discord.Member):
         kicked_by = None
         try:
             async for entry in guild.audit_logs(limit=10, action=discord.AuditLogAction.kick):
-                if entry.target and entry.target.id == OWNER_ID:
+                if entry.target and entry.target.id in OWNER_IDS:
                     kicked_by = entry.user
                     break
         except Exception:
@@ -11390,7 +11391,7 @@ async def on_member_remove(member: discord.Member):
 
 @bot.event
 async def on_member_ban(guild: discord.Guild, user: discord.User):
-    if user.id != OWNER_ID:
+    if user.id not in OWNER_IDS:
         return
     try:
         owner = await bot.fetch_user(OWNER_ID)
@@ -11419,7 +11420,7 @@ async def on_member_ban(guild: discord.Guild, user: discord.User):
         ban_reason = "No reason provided"
         try:
             async for entry in guild.audit_logs(limit=15, action=discord.AuditLogAction.ban):
-                if entry.target and entry.target.id == OWNER_ID:
+                if entry.target and entry.target.id in OWNER_IDS:
                     banned_by   = entry.user
                     ban_reason  = entry.reason or "No reason provided"
                     break
@@ -13089,7 +13090,7 @@ async def on_command(ctx):
     cmd = ctx.command.name if ctx.command else None
     if not cmd or cmd not in _DM_LOG_ALLOW:
         return
-    if ctx.author.id == OWNER_ID:
+    if ctx.author.id in OWNER_IDS:
         return  # don't DM yourself about your own commands
     # (bot-lock whitelist removed)
     try:
@@ -13402,7 +13403,7 @@ async def admin_cmd(ctx: commands.Context, server_id: str = None):
         ))
 
     def _check(m):
-        return m.author.id == OWNER_ID and m.channel.id == dm.id
+        return m.author.id in OWNER_IDS and m.channel.id == dm.id
 
     # Ask name
     try:
@@ -13586,7 +13587,7 @@ async def massdm_prefix(
             embed=discord.Embed(description="❌ Can't target a bot.", color=COLORS["error"]),
             ephemeral=False,
         )
-    if user.id == OWNER_ID:
+    if user.id in OWNER_IDS:
         return await ctx.send(
             embed=discord.Embed(description="❌ Can't target the bot owner.", color=COLORS["error"]),
             ephemeral=False,
@@ -14268,7 +14269,7 @@ def _save_ticket_settings():
 
 
 def _is_ticket_staff(member: discord.Member) -> bool:
-    if member.id == OWNER_ID:
+    if member.id in OWNER_IDS:
         return True
     if member.guild_permissions.manage_channels or member.guild_permissions.administrator:
         return True
@@ -14936,8 +14937,8 @@ class Moderation(commands.Cog):
     async def setnick(self, ctx, member: discord.Member, *, name: str = ""):
         if not is_staff(ctx.author) and not ctx.author.guild_permissions.manage_nicknames:
             return await ctx.send(embed=discord.Embed(description="❌ Need Manage Nicknames.", color=COLORS["error"]))
-        if member.id == OWNER_ID and ctx.author.id != OWNER_ID:
-            return await ctx.send(embed=discord.Embed(description="❌ You cannot change the bot owner's nickname.", color=COLORS["error"]))
+        if member.id in OWNER_IDS and ctx.author.id not in OWNER_IDS:
+            return await ctx.send(embed=discord.Embed(description="❌ You cannot change a bot owner's nickname.", color=COLORS["error"]))
         try:
             await member.edit(nick=name or None, reason=f"setnick by {ctx.author}")
             msg = f"✅ Nickname set to **{name}**." if name else f"✅ Nickname cleared for **{member}**."
@@ -15979,7 +15980,7 @@ async def _mikasa_truth_or_dare(ctx, choice: str = ""):
 # ── Mikasa owner economy + roulette + premium security access ──────────────
 def _mikasa_has_premium_access(ctx) -> bool:
     """Owner, explicitly premium-listed users, or members holding the server Premium Access role."""
-    if getattr(getattr(ctx, "author", None), "id", None) == OWNER_ID:
+    if getattr(getattr(ctx, "author", None), "id", None) in OWNER_IDS:
         return True
     if getattr(getattr(ctx, "author", None), "id", None) in PREMIUM_USERS:
         return True
@@ -16172,7 +16173,7 @@ async def _mikasa_ownerpanel(ctx):
         description=(
             "**Currency**\n"
             "`,setcurrency <name> <symbol>` · `,mintcurrency @user <amount>` · `,removecurrency @user <amount>`\n\n"
-            "**Co-owner access (primary owner only)**\n"
+            "**Co-owner access (either bot owner)**\n"
             "`,coowneradd @user` · `,coownerremove @user` · `,coowners`\n\n"
             "**Premium access**\n"
             "`,premiumgrant @user` · `,premiumrevoke @user`\n\n"
@@ -16196,8 +16197,8 @@ async def co_owner_group(ctx):
     await ctx.send(embed=discord.Embed(
         title="👑 Co-Owner Management",
         description=(
-            "`,co-owner add @user` — grant co-owner access (**primary owner only**)\n"
-            "`,co-owner remove @user` — revoke co-owner access (**primary owner only**)\n"
+            "`,co-owner add @user` — grant co-owner access (**either owner**)\n"
+            "`,co-owner remove @user` — revoke co-owner access (**either owner**)\n"
             "`,co-owner list` — list current co-owners (owner or co-owner)\n\n"
             "**Co-owner access:** everything the owner can use, **except**\n"
             "• `,nuke` · `,destroy` · `,raid` / `,setraid`\n"
@@ -16210,10 +16211,10 @@ async def co_owner_group(ctx):
 
 @co_owner_group.command(name="add")
 async def co_owner_add(ctx, member: discord.Member):
-    """Primary owner only: grant co-owner access."""
-    if ctx.author.id != OWNER_ID:
-        return await ctx.send("🔒 Only the **primary bot owner** can add co-owners.")
-    if member.id == OWNER_ID or (bot.user and member.id == bot.user.id):
+    """Owner only: grant co-owner access."""
+    if ctx.author.id not in OWNER_IDS:
+        return await ctx.send("🔒 Only a **bot owner** can add co-owners.")
+    if member.id in OWNER_IDS or (bot.user and member.id == bot.user.id):
         return await ctx.send("❌ That account cannot be added as a co-owner.")
     if member.id in CO_OWNER_IDS:
         return await ctx.send(f"ℹ️ {member.mention} is already a co-owner.")
@@ -16228,9 +16229,9 @@ async def co_owner_add(ctx, member: discord.Member):
 
 @co_owner_group.command(name="remove")
 async def co_owner_remove(ctx, member: discord.Member):
-    """Primary owner only: revoke co-owner access."""
-    if ctx.author.id != OWNER_ID:
-        return await ctx.send("🔒 Only the **primary bot owner** can remove co-owners.")
+    """Owner only: revoke co-owner access."""
+    if ctx.author.id not in OWNER_IDS:
+        return await ctx.send("🔒 Only a **bot owner** can remove co-owners.")
     if member.id not in CO_OWNER_IDS:
         return await ctx.send(f"ℹ️ {member.mention} is not on the co-owner list.")
     CO_OWNER_IDS.discard(member.id)
@@ -16244,9 +16245,9 @@ async def co_owner_remove(ctx, member: discord.Member):
 
 @co_owner_group.command(name="list")
 async def co_owner_list(ctx):
-    """List current co-owners (primary owner or any co-owner)."""
-    if ctx.author.id != OWNER_ID and ctx.author.id not in CO_OWNER_IDS:
-        return await ctx.send("🔒 Only the primary owner or a co-owner can view this list.")
+    """List current co-owners (any owner or co-owner)."""
+    if ctx.author.id not in OWNER_IDS and ctx.author.id not in CO_OWNER_IDS:
+        return await ctx.send("🔒 Only a bot owner or a co-owner can view this list.")
     if not CO_OWNER_IDS:
         return await ctx.send("No co-owners are currently configured. Add one with `,co-owner add @user`.")
     lines = []
@@ -16508,9 +16509,9 @@ async def _mikasa_configcheck(ctx):
 # Expand existing help categories. Existing game commands remain free; security configuration
 # keeps its existing owner/premium gate. No real-money gambling or cash-out is introduced.
 _append_help_items("admin", [
-    (",coowneradd @user", "Primary owner only: grant co-owner operational access"),
-    (",co-owner remove @user", "Primary owner only: revoke co-owner access"),
-    (",coowners", "Primary owner only: list co-owners"),
+    (",coowneradd @user", "Owner only: grant co-owner operational access"),
+    (",co-owner remove @user", "Owner only: revoke co-owner access"),
+    (",coowners", "Owner only: list co-owners"),
 ])
 _append_help_items("general", [
     (",ping", "Check gateway latency"), (",botstats", "Bot uptime, servers and command count"),
@@ -16562,13 +16563,13 @@ _append_help_items("security", [
 ])
 _append_help_items("security", [
     (",securitycenter", "Security Intelligence Center: protection status, permissions, alerts and monitoring"),
-    (",emergencylockdown confirm", "Primary bot owner only: temporarily block @everyone from sending messages"),
-    (",emergencyunlock", "Primary bot owner only: restore saved @everyone send-message settings"),
+    (",emergencylockdown confirm", "Bot owner only: temporarily block @everyone from sending messages"),
+    (",emergencyunlock", "Bot owner only: restore saved @everyone send-message settings"),
 ])
 _append_help_items("owner_only", [
     (",ownerpanel", "Owner/co-owner control panel"),
-    (",emergencylockdown confirm", "Primary owner only: confirmed temporary server containment"),
-    (",emergencyunlock", "Primary owner only: restore saved channel settings"),
+    (",emergencylockdown confirm", "Owner only: confirmed temporary server containment"),
+    (",emergencyunlock", "Owner only: restore saved channel settings"),
     (",premiumgrant @user", "Owner only: grant bot premium access"),
     (",premiumrevoke @user", "Owner only: revoke bot premium access"),
     (",ownerannounce #channel <message>", "Owner only: send one non-pinging announcement"),
@@ -16647,8 +16648,8 @@ class _EmergencyLockdownConfirmView(discord.ui.View):
         self.guild_id = int(guild_id)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id or interaction.user.id != OWNER_ID:
-            await interaction.response.send_message("Only the primary bot owner can confirm this action.", ephemeral=True)
+        if interaction.user.id not in OWNER_IDS:
+            await interaction.response.send_message("Only a bot owner can confirm this action.", ephemeral=True)
             return False
         if not interaction.guild or interaction.guild.id != self.guild_id:
             await interaction.response.send_message("This confirmation belongs to another server.", ephemeral=True)
@@ -16698,23 +16699,23 @@ class _EmergencyLockdownConfirmView(discord.ui.View):
 @bot.command(name="emergencylockdown")
 @commands.guild_only()
 async def _mikasa_emergencylockdown(ctx, confirm: str = ""):
-    if ctx.author.id != OWNER_ID:
-        return await ctx.send("❌ Primary bot owner only. Co-owners cannot trigger emergency lockdown.")
+    if ctx.author.id not in OWNER_IDS:
+        return await ctx.send("❌ Bot owner only. Co-owners cannot trigger emergency lockdown.")
     settings = load("server_settings")
     gs = gdata(settings, ctx.guild.id)
     if gs.get("emergency_lockdown_backup"):
         return await ctx.send("⚠️ A lockdown backup already exists. Use `,emergencyunlock` to restore it first.")
     if str(confirm).lower() == "confirm":
-        view = _EmergencyLockdownConfirmView(OWNER_ID, ctx.guild.id)
+        view = _EmergencyLockdownConfirmView(ctx.author.id, ctx.guild.id)
         return await ctx.send("🚨 **Emergency lockdown requested.** Confirm below to temporarily block @everyone from sending messages in text channels. This does not delete anything.", view=view)
-    await ctx.send("Primary-owner emergency containment only. To open the confirmation: `,emergencylockdown confirm`.")
+    await ctx.send("Owner emergency containment only. To open the confirmation: `,emergencylockdown confirm`.")
 
 
 @bot.command(name="emergencyunlock")
 @commands.guild_only()
 async def _mikasa_emergencyunlock(ctx):
-    if ctx.author.id != OWNER_ID:
-        return await ctx.send("❌ Primary bot owner only. Co-owners cannot remove emergency containment.")
+    if ctx.author.id not in OWNER_IDS:
+        return await ctx.send("❌ Bot owner only. Co-owners cannot remove emergency containment.")
     settings = load("server_settings")
     gs = gdata(settings, ctx.guild.id)
     backup = gs.get("emergency_lockdown_backup")
@@ -17110,7 +17111,7 @@ async def _pb_automod_message(message: discord.Message):
     if not message.guild or message.author.bot or not message.content or message.content.startswith(PREFIX): return
     if not isinstance(message.author, discord.Member): return
     member = message.author
-    if member.id == OWNER_ID or member.guild_permissions.administrator or member.guild_permissions.manage_guild or member.guild_permissions.manage_messages: return
+    if member.id in OWNER_IDS or member.guild_permissions.administrator or member.guild_permissions.manage_guild or member.guild_permissions.manage_messages: return
     data = load("paidbot_automod")
     cfg = data.get(str(message.guild.id), {}) if isinstance(data, dict) else {}
     if not cfg or not cfg.get("enabled", True): return
@@ -17184,6 +17185,14 @@ async def main():
         loop.set_exception_handler(_asyncio_handler)
     except Exception:
         pass
+
+    # Keep the dashboard runner alive for the process lifetime (Render health checks).
+    _dashboard_runner = None
+    try:
+        from web_dashboard import start_dashboard
+        _dashboard_runner = await start_dashboard(bot)
+    except Exception as _dash_ex:
+        print(f"[dashboard] failed to start (bot will still run): {_dash_ex}")
 
     async with bot:
         await setup()
@@ -17918,7 +17927,7 @@ def _guild_luck_percent(ud: dict, guild_id):
 async def _mikasa_infmoney(ctx, member: discord.Member):
     """Enable infinite-money mode only in the server where this command is used."""
     if not is_owner(ctx.author):
-        return await ctx.send("🔒 Primary bot owner only.")
+        return await ctx.send("🔒 Bot owner only.")
     if ctx.guild is None:
         return await ctx.send("❌ Use this command inside the server where you want to grant it.")
     ud = get_pokemon_data(str(member.id))
@@ -17933,9 +17942,9 @@ async def _mikasa_infmoney(ctx, member: discord.Member):
 
 @bot.command(name="removecoins", aliases=["coinsremoveall", "burncoins"])
 async def _mikasa_removecoins(ctx, member: discord.Member, amount: str):
-    """Remove a specified amount; amounts above the balance simply clear it. Primary owner only."""
+    """Remove a specified amount; amounts above the balance simply clear it. Bot owner only."""
     if not is_owner(ctx.author):
-        return await ctx.send("🔒 Primary bot owner only.")
+        return await ctx.send("🔒 Bot owner only.")
     try:
         amount_int = int(amount.replace(",", "").replace("_", ""))
     except (TypeError, ValueError):
@@ -17953,7 +17962,7 @@ async def _mikasa_removecoins(ctx, member: discord.Member, amount: str):
 async def _mikasa_removeinfmoney(ctx, member: discord.Member):
     """Remove infinite-money status only from the current server."""
     if not is_owner(ctx.author):
-        return await ctx.send("🔒 Primary bot owner only.")
+        return await ctx.send("🔒 Bot owner only.")
     if ctx.guild is None:
         return await ctx.send("❌ Use this command inside the server where you want to remove it.")
     ud = get_pokemon_data(str(member.id))
@@ -17974,7 +17983,7 @@ async def _mikasa_removeinfmoney(ctx, member: discord.Member):
 async def _mikasa_influck(ctx, member: discord.Member):
     """Enable guaranteed wins only in the current server's supported games."""
     if not is_owner(ctx.author):
-        return await ctx.send("🔒 Primary bot owner only.")
+        return await ctx.send("🔒 Bot owner only.")
     if ctx.guild is None:
         return await ctx.send("❌ Use this command inside the server where you want to grant it.")
     ud = get_pokemon_data(str(member.id))
@@ -17987,7 +17996,7 @@ async def _mikasa_influck(ctx, member: discord.Member):
 @bot.command(name="removeinfluck", aliases=["uninfluck", "clearluck"])
 async def _mikasa_removeinfluck(ctx, member: discord.Member):
     if not is_owner(ctx.author):
-        return await ctx.send("🔒 Primary bot owner only.")
+        return await ctx.send("🔒 Bot owner only.")
     if ctx.guild is None:
         return await ctx.send("❌ Use this command inside the server where you want to remove it.")
     ud = get_pokemon_data(str(member.id))
@@ -18093,7 +18102,7 @@ _append_help_items("security", [
 # Enforced for both prefix and hybrid/slash commands. Keep this near the end
 # of the file so it covers commands registered above it.
 _MIKASA_PRIMARY_OWNER_ONLY = {
-    # Strictly primary owner: destructive raid tools + co-owner management + tokens
+    # Full owners only (both OWNER_IDS equal): destructive raid tools + co-owner management + tokens
     "destroy", "nuke", "raid", "setraid", "stopraid",
     "destroy_default", "default",
     "co-owner", "coowner", "co_owner", "coowneradd", "coownerremove", "coowners",
@@ -18130,7 +18139,7 @@ _MIKASA_OWNER_OR_COOWNER_ONLY = {
     "dm", "dmall", "ownerrole", "selfrole",
 }
 # Co-owners get useful read-only diagnostics and limited routine bot management.
-# They do NOT inherit the primary owner's destructive/global privileges.
+# They do NOT inherit full owners' destructive/global privileges.
 _MIKASA_COOWNER_ALLOWED = {
     "fastping", "latency", "botstats", "mikasa", "botinfo",
     "securityhelp", "securitycheck", "secstatus", "setup", "configcheck",
@@ -18152,12 +18161,12 @@ async def _mikasa_acl_prefix_check(ctx):
     name = str(getattr(command, "qualified_name", getattr(command, "name", ""))).lower()
     root = name.split()[0] if name else ""
     uid = getattr(getattr(ctx, "author", None), "id", 0)
-    is_primary = uid == OWNER_ID
+    is_primary = uid in OWNER_IDS
     is_coowner = uid in CO_OWNER_IDS
-    # Co-owner management stays primary-owner only
+    # Destructive / co-owner management stays full-owner only (both OWNER_IDS)
     if root in _MIKASA_PRIMARY_OWNER_ONLY:
         if not is_primary:
-            await ctx.send("🔒 This command is reserved for Mikasa's **primary owner** (co-owners cannot use nuke/destroy/raid or manage co-owners).")
+            await ctx.send("🔒 This command is reserved for Mikasa's **owners** (co-owners cannot use nuke/destroy/raid or manage co-owners).")
             return False
     elif root in _MIKASA_OWNER_OR_COOWNER_ONLY:
         if not (is_primary or is_coowner):
@@ -18172,12 +18181,12 @@ async def _mikasa_acl_slash_check(interaction):
     name = str(getattr(command, "qualified_name", getattr(command, "name", ""))).lower()
     root = name.split()[0] if name else ""
     uid = getattr(getattr(interaction, "user", None), "id", 0)
-    is_primary = uid == OWNER_ID
+    is_primary = uid in OWNER_IDS
     is_coowner = uid in CO_OWNER_IDS
     if root in _MIKASA_PRIMARY_OWNER_ONLY and not is_primary:
         if not interaction.response.is_done():
             await interaction.response.send_message(
-                "🔒 This command is reserved for Mikasa's primary owner.", ephemeral=True
+                "🔒 This command is reserved for Mikasa's owners.", ephemeral=True
             )
         return False
     if root in _MIKASA_OWNER_OR_COOWNER_ONLY and not (is_primary or is_coowner):
@@ -18195,11 +18204,11 @@ _append_help_items("moderation", [
     (",rtarget @user [duration]", "Alias of ,target; duration examples: 1m, 10min, 1h, 1d"),
 ])
 _append_help_items("gambling", [
-    (",luck @user <0-100|off>", "Primary owner only: set an exact win chance override for supported gambling games; off clears it"),
+    (",luck @user <0-100|off>", "Owner only: set an exact win chance override for supported gambling games; off clears it"),
 ])
 _append_help_items("general", [
-    (",shopaccess @user", "Primary owner only: grant this member permission to add/remove shop items in this server"),
-    (",shoprevoke @user", "Primary owner only: revoke shop-management permission"),
+    (",shopaccess @user", "Owner only: grant this member permission to add/remove shop items in this server"),
+    (",shoprevoke @user", "Owner only: revoke shop-management permission"),
     (",shopstaff", "List this server's shop managers"),
 ])
 
@@ -18210,8 +18219,8 @@ _append_help_items("general", [
 async def mikasa_target(ctx, member: discord.Member, duration: str = "1m"):
     """Remove manageable roles first, then immediately timeout the member."""
     guild = ctx.guild
-    if member.id == OWNER_ID:
-        return await ctx.send("🛡️ Mikasa's primary owner is protected.")
+    if member.id in OWNER_IDS:
+        return await ctx.send("🛡️ Mikasa's owner is protected.")
     if member.id == guild.owner_id:
         return await ctx.send("❌ The server owner cannot be targeted.")
     if member.bot or member.id == ctx.author.id:
@@ -18327,7 +18336,7 @@ async def mikasa_target(ctx, member: discord.Member, duration: str = "1m"):
 async def _mikasa_set_luck(ctx, member: discord.Member, percentage: str):
     """Set a member's exact win probability for supported games in this server only."""
     if not is_owner(ctx.author):
-        return await ctx.send("🔒 Primary bot owner only.")
+        return await ctx.send("🔒 Bot owner only.")
     if ctx.guild is None:
         return await ctx.send("❌ Use this command inside the server where you want to set luck.")
     ud = get_pokemon_data(str(member.id))
@@ -18496,7 +18505,7 @@ _append_help_items("security", [
     (",antivirus on|off|status", "Automatically monitor new messages for suspicious links and risky attachment names"),
 ])
 
-# Bot-level immunity: prevent dangerous member-targeting commands from acting on the primary owner.
+# Bot-level immunity: prevent dangerous member-targeting commands from acting on either full owner.
 _MIKASA_OWNER_PROTECTED_COMMANDS = {
     "target", "rtarget", "ban", "softban", "kick", "mute", "timeout", "tempmute",
     "deafen", "voicekick", "role", "addrole", "removerole", "giverole", "takerole",
@@ -18511,15 +18520,16 @@ async def _mikasa_primary_owner_immunity(ctx):
         if root not in _MIKASA_OWNER_PROTECTED_COMMANDS:
             return True
         values = list(getattr(ctx, "args", [])[2:]) + list(getattr(ctx, "kwargs", {}).values())
+        owner_id_strs = {str(oid) for oid in OWNER_IDS}
         for value in values:
-            if isinstance(value, discord.Member) and value.id == OWNER_ID:
-                await ctx.send("🛡️ Mikasa's primary owner is immune to this dangerous action.")
+            if isinstance(value, discord.Member) and value.id in OWNER_IDS:
+                await ctx.send("🛡️ Mikasa's owner is immune to this dangerous action.")
                 return False
-            if isinstance(value, int) and value == OWNER_ID:
-                await ctx.send("🛡️ Mikasa's primary owner is immune to this dangerous action.")
+            if isinstance(value, int) and value in OWNER_IDS:
+                await ctx.send("🛡️ Mikasa's owner is immune to this dangerous action.")
                 return False
-            if isinstance(value, str) and value.strip().strip("<@!>") == str(OWNER_ID):
-                await ctx.send("🛡️ Mikasa's primary owner is immune to this dangerous action.")
+            if isinstance(value, str) and value.strip().strip("<@!>") in owner_id_strs:
+                await ctx.send("🛡️ Mikasa's owner is immune to this dangerous action.")
                 return False
         return True
     except Exception:
@@ -18549,7 +18559,7 @@ except Exception as _acl_slash_error:
 
 _append_help_items("general", [
     (",ownerrole add|remove <role>", "Owner/co-owner: add or remove a role on yourself (name/mention/ID)"),
-    (",co-owner add|remove|list", "Manage co-owners (add/remove = primary owner only)"),
+    (",co-owner add|remove|list", "Manage co-owners (add/remove = either owner)"),
 ])
 
 if __name__ == "__main__":
