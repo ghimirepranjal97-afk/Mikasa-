@@ -13301,7 +13301,7 @@ class Moderation(commands.Cog):
 
 
 async def setup():
-    for _cog_cls in (Moderation, AdminCog, Giveaways, Fun, Games, AntiNukeCog, LoggingCog, LevelingCog):
+    for _cog_cls in (Moderation, Giveaways, Fun, Games, AntiNukeCog, LoggingCog, LevelingCog):
         try:
             await bot.add_cog(_cog_cls(bot))
             print(f"[setup] loaded {_cog_cls.__name__}")
