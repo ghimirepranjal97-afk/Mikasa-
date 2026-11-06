@@ -30,13 +30,24 @@ from urllib.parse import urlencode
 from aiohttp import ClientSession, web
 
 # ── Paths (same layout the bot uses) ─────────────────────────────────────
-# DATA_DIR matches Mikasa's Path("data") so both share the same JSON files
-# when the process CWD is the project root (normal on Render).
+# DATA_DIR must match Mikasa.py (env DATA_DIR, else /var/data if present, else data/)
+# so dashboard toggles and bot economy/settings share one persistent folder.
 ROOT = Path(__file__).resolve().parent
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+_data_env = (os.getenv("DATA_DIR") or "").strip()
+if _data_env:
+    DATA_DIR = Path(_data_env)
+elif Path("/var/data").exists():
+    DATA_DIR = Path("/var/data")
+else:
+    DATA_DIR = Path("data")
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    DATA_DIR = Path("data")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
 STATIC_DIR = ROOT / "dashboard" / "static"
 TEMPLATES_DIR = ROOT / "dashboard" / "templates"
+print(f"[dashboard] DATA_DIR={DATA_DIR.resolve()}")
 
 # ── OAuth / session config ───────────────────────────────────────────────
 CLIENT_ID = os.getenv("DISCORD_CLIENT_ID", "").strip()
@@ -176,10 +187,19 @@ async def handle_index(request: web.Request) -> web.Response:
 
 
 async def handle_login(request: web.Request) -> web.Response:
-    if not CLIENT_ID:
+    if not CLIENT_ID or not CLIENT_SECRET:
         return web.Response(
-            text="Dashboard OAuth is not configured. Set DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, and DISCORD_REDIRECT_URI on Render.",
-            status=500,
+            text=(
+                "Dashboard OAuth is not configured.\n\n"
+                "On Render → Environment, set:\n"
+                "  DISCORD_CLIENT_ID\n"
+                "  DISCORD_CLIENT_SECRET\n"
+                "  DISCORD_REDIRECT_URI  (https://YOUR-SERVICE.onrender.com/callback)\n\n"
+                "Then add the same redirect URL under Discord Developer Portal → OAuth2.\n"
+                "The Discord bot itself does not need these to run — only the web login UI does."
+            ),
+            status=503,
+            content_type="text/plain",
         )
     state = secrets.token_urlsafe(24)
     _OAUTH_STATES[state] = time.time()
