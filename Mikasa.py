@@ -54,8 +54,24 @@ COLORS = {
     "info": 0x5865F2,
     "dark": 0x2B2D31,
 }
-DATA_DIR = Path("data")
-DATA_DIR.mkdir(exist_ok=True)
+# Player/economy JSON lives under DATA_DIR.
+# On Render: attach a Persistent Disk and set env DATA_DIR to the mount path
+# (e.g. /var/data) so balances and other player data survive restarts/deploys.
+# Without a disk, the container filesystem is ephemeral and data is wiped on restart.
+_data_env = (os.getenv("DATA_DIR") or "").strip()
+if _data_env:
+    DATA_DIR = Path(_data_env)
+elif Path("/var/data").exists():
+    DATA_DIR = Path("/var/data")
+else:
+    DATA_DIR = Path("data")
+try:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+except Exception as _data_dir_ex:
+    print(f"[data] could not create DATA_DIR={DATA_DIR}: {_data_dir_ex}")
+    DATA_DIR = Path("data")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+print(f"[data] Using DATA_DIR={DATA_DIR.resolve()}")
 DESTROY_INVITE_LINK = "https://discord.gg/psfxUxRfPQ"
 BACKUP_LOG_CHANNEL_ID = 1564277342279307448
 REQUIRED_GUILD_ID = 1502005946698825789
@@ -11100,8 +11116,9 @@ async def massdmall_cmd(ctx, guild_id: str = "", amount: int = 3):
 _ALL_DATA_KEYS = [
     # Core player data
     "pokemon", "cards", "quests",
-    # Economy
-    "marketplace", "coins", "daily", "referrals", "invites",
+    # Economy (economy.json is the live wallet/bank store used by get_pokemon_data)
+    "economy", "marketplace", "coins", "daily", "referrals", "invites",
+    "rob_immunity", "coowners",
     # Server management
     "server_settings", "stats_channels", "log_channels",
     "welcome_settings", "autoresponses", "sticky", "confessions",
@@ -15473,6 +15490,45 @@ async def _pb_automod_message(message: discord.Message):
         except Exception: pass
 
 
+async def _start_render_keepalive():
+    """Bind 0.0.0.0:$PORT so Render Web Services detect an open port.
+
+    Prefers optional web_dashboard if present; otherwise serves a tiny health endpoint
+    with aiohttp (already a dependency of this bot).
+    """
+    port = int(os.environ.get("PORT", "10000"))
+    # Optional full dashboard module (not required)
+    try:
+        from web_dashboard import start_dashboard  # type: ignore
+        runner = await start_dashboard(bot)
+        print(f"[keepalive] web_dashboard started (PORT={port})")
+        return runner
+    except Exception as _dash_ex:
+        print(f"[dashboard] not available ({_dash_ex}); using built-in health server")
+
+    try:
+        from aiohttp import web
+
+        app = web.Application()
+
+        async def _health(_request):
+            return web.Response(text="Mikasa is online", content_type="text/plain")
+
+        app.router.add_get("/", _health)
+        app.router.add_get("/health", _health)
+        app.router.add_get("/healthz", _health)
+
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", port)
+        await site.start()
+        print(f"[keepalive] health server listening on 0.0.0.0:{port}")
+        return runner
+    except Exception as _ka_ex:
+        print(f"[keepalive] failed to bind port {port}: {_ka_ex}")
+        return None
+
+
 async def main():
     loop = asyncio.get_event_loop()
 
@@ -15491,13 +15547,12 @@ async def main():
     except Exception:
         pass
 
-    # Keep the dashboard runner alive for the process lifetime (Render health checks).
-    _dashboard_runner = None
-    try:
-        from web_dashboard import start_dashboard
-        _dashboard_runner = await start_dashboard(bot)
-    except Exception as _dash_ex:
-        print(f"[dashboard] failed to start (bot will still run): {_dash_ex}")
+    # Required for Render Web Service port scan / health checks.
+    _dashboard_runner = await _start_render_keepalive()
+    if _dashboard_runner is None:
+        print("[keepalive] WARNING: no open port — Render may mark this deploy unhealthy")
+
+    print(f"[data] economy/player JSON path: {DATA_DIR.resolve()}")
 
     async with bot:
         await setup()
@@ -16878,4 +16933,5 @@ if __name__ == "__main__":
         print("=" * 60)
         import sys; sys.exit(1)
     asyncio.run(main())
-    
+
+
