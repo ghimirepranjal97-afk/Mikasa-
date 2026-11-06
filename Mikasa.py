@@ -15493,18 +15493,31 @@ async def _pb_automod_message(message: discord.Message):
 async def _start_render_keepalive():
     """Bind 0.0.0.0:$PORT so Render Web Services detect an open port.
 
-    Prefers optional web_dashboard if present; otherwise serves a tiny health endpoint
-    with aiohttp (already a dependency of this bot).
+    Full web_dashboard (Discord OAuth UI) is started only when all of
+    DISCORD_CLIENT_ID, DISCORD_CLIENT_SECRET, and DISCORD_REDIRECT_URI are set.
+    Otherwise a minimal health endpoint is used so deploys stay healthy and
+    browsers no longer see the OAuth-not-configured error.
     """
     port = int(os.environ.get("PORT", "10000"))
-    # Optional full dashboard module (not required)
-    try:
-        from web_dashboard import start_dashboard  # type: ignore
-        runner = await start_dashboard(bot)
-        print(f"[keepalive] web_dashboard started (PORT={port})")
-        return runner
-    except Exception as _dash_ex:
-        print(f"[dashboard] not available ({_dash_ex}); using built-in health server")
+    client_id = (os.getenv("DISCORD_CLIENT_ID") or "").strip()
+    client_secret = (os.getenv("DISCORD_CLIENT_SECRET") or "").strip()
+    redirect_uri = (os.getenv("DISCORD_REDIRECT_URI") or "").strip()
+    oauth_ready = bool(client_id and client_secret and redirect_uri)
+
+    if oauth_ready:
+        try:
+            from web_dashboard import start_dashboard  # type: ignore
+            runner = await start_dashboard(bot)
+            print(f"[keepalive] web_dashboard started (PORT={port})")
+            return runner
+        except Exception as _dash_ex:
+            print(f"[dashboard] failed ({_dash_ex}); falling back to health server")
+    else:
+        print(
+            "[dashboard] OAuth env not set "
+            "(DISCORD_CLIENT_ID / DISCORD_CLIENT_SECRET / DISCORD_REDIRECT_URI) — "
+            "using health server only (bot still runs normally)"
+        )
 
     try:
         from aiohttp import web
