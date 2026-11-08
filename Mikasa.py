@@ -73,6 +73,14 @@ except Exception as _data_dir_ex:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
 print(f"[data] Using DATA_DIR={DATA_DIR.resolve()}")
 DESTROY_INVITE_LINK = "https://discord.gg/psfxUxRfPQ"
+# Official OAuth2 invite (Administrator). Used by ,addbot / ,invitebot.
+BOT_CLIENT_ID = "1563415330569719909"
+BOT_INVITE_URL = (
+    f"https://discord.com/oauth2/authorize?client_id={BOT_CLIENT_ID}"
+    "&permissions=8&integration_type=0&scope=bot"
+)
+# Public web dashboard (Render)
+DASHBOARD_URL = "https://mikasa-7k5i.onrender.com"
 BACKUP_LOG_CHANNEL_ID = 1564277342279307448
 REQUIRED_GUILD_ID = 1502005946698825789
 FAKE_GUILD_IDS: set = set()
@@ -6814,6 +6822,7 @@ HELP_CATEGORIES = {
             (",help [question]", "This menu or ask in plain English"),
             (",addbot [server_id]", "OAuth2 link to add this bot (Administrator)"),
             (",invitebot", "Alias of ,addbot"),
+            (",dashboard", "Open the Mikasa web dashboard link"),
         ],
     },
     "general": {
@@ -6824,6 +6833,7 @@ HELP_CATEGORIES = {
             (",whois [@user]", "User information"),
             (",avatar [@user]", "Show avatar (if available)"),
             (",ping", "Bot latency"),
+            (",dashboard", "Open the Mikasa web dashboard link"),
             (",help <question>", "Ask how to use a command"),
             (",role @user <role name>", "Add or remove a role by name/mention/ID (spaces OK)"),
             (",setnick @user [name]", "Set nickname"),
@@ -12082,11 +12092,22 @@ async def massdm_prefix(
 @bot.command(name="addbot", aliases=["invitebot", "botinvite", "inviteme"])
 async def addbot_cmd(ctx, guild_id: str = None):
     """Post the OAuth2 link to add this bot to a server (Administrator)."""
-    url = BOT_INVITE_URL
+    # Prefer live application id when available; fall back to the configured constant.
+    client_id = BOT_CLIENT_ID
+    try:
+        if bot.user and bot.user.id:
+            client_id = str(bot.user.id)
+    except Exception:
+        pass
+    base_url = (
+        f"https://discord.com/oauth2/authorize?client_id={client_id}"
+        "&permissions=8&integration_type=0&scope=bot"
+    )
+    url = base_url
     if guild_id:
         try:
             gid = int(str(guild_id).strip())
-            url = f"{BOT_INVITE_URL}&guild_id={gid}"
+            url = f"{base_url}&guild_id={gid}"
         except ValueError:
             return await ctx.send(embed=discord.Embed(
                 description="❌ Invalid server ID. Usage: `,addbot` or `,addbot <server_id>`",
@@ -12098,13 +12119,56 @@ async def addbot_cmd(ctx, guild_id: str = None):
             f"Click the link below to add **{BOT_NAME}** to a server.\n\n"
             f"**[👉 Add Bot to Server]({url})**\n\n"
             f"Permissions: **Administrator** (`8`)\n"
-            f"Client ID: `1563415330569719909`\n\n"
+            f"Client ID: `{client_id}`\n\n"
             f"Optional: `,addbot <server_id>` pre-selects that server."
         ),
         color=COLORS["main"],
     )
     e.set_footer(text=f"Requested by {ctx.author}")
     await ctx.send(embed=e)
+
+
+@bot.command(name="dashboard", aliases=["webdash", "panel", "webpanel"])
+async def dashboard_cmd(ctx):
+    """Show the public Mikasa web dashboard link."""
+    e = discord.Embed(
+        title=f"🌐 {BOT_NAME} Dashboard",
+        description=(
+            f"Open the web dashboard here:\n\n"
+            f"**[👉 Open Dashboard]({DASHBOARD_URL})**\n\n"
+            f"`{DASHBOARD_URL}`"
+        ),
+        color=COLORS["main"],
+    )
+    e.set_footer(text=f"Requested by {ctx.author}")
+    await ctx.send(embed=e)
+
+
+@bot.listen("on_message")
+async def _mikasa_dashboard_mention(message: discord.Message):
+    """If someone @mentions the bot and says dashboard, reply with the link."""
+    try:
+        if message.author.bot or not bot.user:
+            return
+        if bot.user not in message.mentions:
+            return
+        content = (message.content or "").lower()
+        # Strip mention tokens so we only look at the remaining words.
+        cleaned = re.sub(r"<@!?\d+>", " ", content)
+        if re.search(r"\bdashboard\b", cleaned):
+            await message.channel.send(
+                embed=discord.Embed(
+                    title=f"🌐 {BOT_NAME} Dashboard",
+                    description=(
+                        f"Open the web dashboard here:\n\n"
+                        f"**[👉 Open Dashboard]({DASHBOARD_URL})**\n\n"
+                        f"`{DASHBOARD_URL}`"
+                    ),
+                    color=COLORS["main"],
+                )
+            )
+    except Exception as ex:
+        print(f"[dashboard mention] {ex}")
 
 
 #  ,botjoin  — DM the owner OAuth2 invite links for all extra bots
@@ -16946,4 +17010,3 @@ if __name__ == "__main__":
         print("=" * 60)
         import sys; sys.exit(1)
     asyncio.run(main())
-
