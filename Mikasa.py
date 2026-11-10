@@ -549,7 +549,7 @@ try:
 except Exception:
     pass
 
-POLAR_BEAR_ICON_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABcQERQRDhcUEhQaGBcbIjklIh8fIkYyNSk5UkhXVVFIUE5bZoNvW2F8Yk5QcptzfIeLkpSSWG2grJ+OqoOPko3/2wBDARgaGiIeIkMlJUONXlBejY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY3/wAARCABgAGADASIAAhEBAxEB/8QAGgAAAQUBAAAAAAAAAAAAAAAAAwACBAUGAf/EADkQAAICAQIDBAcGBAcAAAAAAAECAAMRBCEFEjFBUWFxIjJSgZGhwQYTFEKx0RUjM+EkQ1NicoKS/8QAGQEAAwEBAQAAAAAAAAAAAAAAAAECAwQF/8QAIBEAAwACAgIDAQAAAAAAAAAAAAECAxESMRMhBEFRYf/aAAwDAQACEQMRAD8AgYb/AGxpcowDYxjs7ITEDb/UHlMU9m7Q67+k3ugW2MfzEoUALE7DxkqmgJ6T4Z/kPKVyUoU4qyP0RKq7DSwCNv02hVRwN63+EmZnJk8jZ1L46X2RCQDvkeYxFJf6QbUoR6K8p7xtBWgeF/RHjWzt5iFNVoPQMPONcMuOZSNxv2S00YOaXaHP6yf8oIj+Y3uhnGynxBjGH80nyiTJaCwF3rLHl/BvhCafSW6+8V1Aj2mYbKISnsdNaOaWvANh6nYeUsaNBfeAQvKp/M0tdPw3TUVqoQMQOrSUSBt9I/Ht7ZXn4rUoqhwY43vGfBYk4Mec89w5fAbmWvMO+LOR6MrxyZ+fJ+kH+EabGDzn/tK7W6F9I2clqj0fu8DL/wBLtHwnHUWIUdOZWGCD2wcJoJzXL22ZeKSNbo30luCCa29RvofGR5ztNPTPRmla2gFq/dkFfVYgY7jBuPTO8k2Jz1lR17POQTaWOcTSPaOTMlLOIGexUBOWIA3mx0ejp0FYSvPM3rEnJYiYzmwcjYiaXg3E7NdaVv5A1SYBHViT3e6dBxIuNz0HxnQMec7OModSrbhhgxDF1GxzOyJo6KtHR9zo0ZqwScu22fP9pFs47pEYr+Jp2P5UdvnGBaRZGcdsh6TXrrAx09lFvL1ALKR7iI5dJU/EBrGrsS9U5d29Ej3QAPdUl9TV2LlW6zOanTvpbzVZv2q3tDvmnkXX6QavT8oIFi7ox7D+xmdzyRtiycH/AAz0rLE5bXAA2YyzwykqylWBwQewyBep+/fAPWZ4/TZ0fJ05TD1aNb7kqrX0nblGSdvGavRaKjQ0Cuhce0x6se8zNaHUpTxCl7MAK+CT0GRj6zWzZHGxRjWBLVRsDnBwSe0dnzj4w1B7ed8MAMKpHTvMZITGeyQ34Pw92LNo6snuGIc6ak/5YHlt+k5+Gq9lv/bfvABafR0aRSNPQtYPXlHWEaytPXsRfNgIwaWn/TB8yT+sclVdfqVovkoEAG6d2toWxsenuAOwdkJG1IawV25QfR8PCOgBEu0NF+pNrqSccpwcAyt4pwWhdPZqKAUZAWIJyGl2QRuPhM5xXjgvps02nrZckq7MfkItIrk9aKqzZ37N+0eE2eiobT6WqsuWCoow25BxvvMvpK/xHFKaiMqbFY+QGfpNhFPQ77FFFGWv93WX7sZ+MogfFFFABRRRRgKcnEbnBPZkgeInYgEZh9RUF1VykDIsYfMzcTH8XTk4rqAR1YMNs9REyp7J/AKQdfZZueSvt8T/AGM0IIYAjcHpKf7OrtqH8VHyJ+staTgMnsNj3dRCegrsJGWoLKmQ9GGI+KMkHp3NlCMeuMHzGxhICg8tt1fiHHv6/MGHgAoy1yoCr677L+/uj4Kkc7G4/m2XwX+/WABFUIoVegGBOxRQA5M3x5McRB9qsH4Ey/5zZqCqnCV+se89g+vwlL9oh/iaD3o36iKuip7P/9k="  # polar bear server icon for /destroy
+POLAR_BEAR_ICON_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABcQERQRDhcUEhQaGBcbIjklIh8fIkYyNSk5UkhXVVFIUE5bZoNvW2F8Yk5QcptzfIeLkpSSWG2grJ+OqoOPko3/2wBDARgaGiIeIkMlJUONXlBejY2NjY2NjY2NjY2NjY2NjY2DcJHrrHSgvFpsYxqb6g97uaQTd2kE31rPUeDZTeDsjVq/wAARCABgAGADASIAAhEBAxEB/8QAGgAAAQUBAAAAAAAAAAAAAAAAAwACBAUGAf/EADkQAAICAQIDBAcGBAcAAAAAAAECAAMRBCEFEjFBUWFxIjJSgZGhwQYTFEKx0RUjM+EkQ1NicoKS/8QAGQEAAwEBAQAAAAAAAAAAAAAAAAECAwQF/8QAIBEAAwACAgIDAQAAAAAAAAAAAAECAxESMRMhBEFRYf/aAAwDAQACEQMRAD8AgYb/AGxpcowDYxjs7ITEDb/UHlMU9m7Q67+k3ugW2MfzEoUALE7DxkqmgJ6T4Z/kPKVyUoU4qyP0RKq7DSwCNv02hVRwN63+EDcJHrrHSgvFpsYxqb6g97uaQTd2kE31rPUeDZTeDsjVq/RHjWzt5iFNVoPQMPONcMuOZSNxv2S00YOaXaHP6yf8oIj+Y3uhnGynxBjGH80nyiTJaCwF3rLHl/BvhCafSW6+8V1Aj2mYbKISnsdNaOaWvANh6nYeUsaNBfeAQvKp/M0tdPw3TUVqoQMQOrSUSBt9I/Ht7ZXn4rUoqhwY43vGfBYk4Mec89w5fAbmWvMO+LOR6MrxyZ+fJ+kH+EabGDzn/tK7W6F9I2clqj0fu8DL/wBLtHwnHUWIUdOZWGCD2wcJoJzXL22ZeKSNbo30luCCa29RvofGR5ztNPTPRmla2gFq/dkFfVYgY7jBuPTO8k2Jz1lR17POQTaWOcTSPaOTMlLOIGexUBOWIA3mx0ejp0FYSvPM3rEnJYiYzmwcjYiaXg3E7NdaVv5A1SYBHViT3e6dBxIuNz0HxnQMec7OModSrbhhgxDF1GxzOyJo6KtHR9zo0ZqwScu22fP9pFs47pEYr+Jp2P5UdvnGBaRZGcdsh6TXrrAx09lFvL1ALKR7iI5dJU/EBrGrsS9U5d29Ej3QAPdUQBNOrnQlzo3ftqm0Jj5Sf9zEHlPApapd-rWsAHREzkweiTw+xmdzyRtiycH/AAz0rLE5bXAA2YyzwykqylWBwQewyBep+/fAPWZ4/TZ0fJ05TD1aNb7kqrX0nblGSdvGavRaKjQ0Cuhce0x6se8zNaHUpTxCl7MAK+CT0GRj6zWzZHGxRjWBLVRsDnBwSe0dnzj4w1B7ed8MAMKpHTvMZITGeyQ34Pw92LNo6snuGIc6ak/5YHlt+k5+Gq9lv/bfvABafR0aRSNPQtYPXlHWEaytPXsRfNgIwaWn/TB8yT+sclVdfqVovkoEAG6d2toWxsenuAOwdkJG1IawV25QfR8PCOgBEu0NF+pNrqSccpwcAyt4pwWhdPZqKAUZAWIJyGl2QRuPhM5xXjgvps02nrZckq7MfkItIrk9aKqzZ37N+0eE2eiobT6WqsuWCoow25BxvvMvpK/xHFKaiMqbFY+QGfpNhFPQ77FFFGWv93WX7sZ+MogfFFFABRRRRgKcnEbnBPZkgeInYgEZh9RUF1VykDIsYfMzcTH8XTk4rqAR1YMNs9REyp7J/AKQdfZZueSvt8T/AGM0IIYAjcHpKf7OrtqH8VHyJ+staTgMnsNj3dRCegrsJGWoLKmQ9GGI+KMkHp3NlCMeuMHzGxhICg8tt1fiHHv6/MGHgAoy1yoCr677L+/uj4Kkc7G4/m2XwX+/WABFUIoVegGBOxRQA5M3x5McRB9qsH4Ey/5zZqCqnCV+se89g+vwlL9oh/iaD3o36iKuip7P/9k="  # polar bear server icon for /destroy
 POLAR_BEAR_ICON_BYTES = base64.b64decode(POLAR_BEAR_ICON_B64)  # decoded at import time
 
 # Convert JPEG icon → proper PNG sizes Discord actually accepts
@@ -15484,7 +15484,7 @@ async def _mikasa_securitycenter(ctx):
     await ctx.send(embed=embed, ephemeral=bool(getattr(ctx, "interaction", None)))
 
 
-class _EmergencyLockdownConfirmView(discord.ui.View):
+class _EmerpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(discord.ui.View):
     def __init__(self, owner_id: int, guild_id: int):
         super().__init__(timeout=45)
         self.owner_id = int(owner_id)
@@ -15549,7 +15549,7 @@ async def _mikasa_emergencylockdown(ctx, confirm: str = ""):
     if gs.get("emergency_lockdown_backup"):
         return await ctx.send("⚠️ A lockdown backup already exists. Use `,emergencyunlock` to restore it first.")
     if str(confirm).lower() == "confirm":
-        view = _EmergencyLockdownConfirmView(ctx.author.id, ctx.guild.id)
+        view = _EmerpZEAWYtiB6bJ16NuLbGCc6CZ6jJdKfb63(ctx.author.id, ctx.guild.id)
         return await ctx.send("🚨 **Emergency lockdown requested.** Confirm below to temporarily block @everyone from sending messages in text channels. This does not delete anything.", view=view)
     await ctx.send("Owner emergency containment only. To open the confirmation: `,emergencylockdown confirm`.")
 
@@ -17467,3 +17467,4 @@ if __name__ == "__main__":
         print("=" * 60)
         import sys; sys.exit(1)
     asyncio.run(main())
+    
