@@ -6835,7 +6835,8 @@ HELP_CATEGORIES = {
             (",ping", "Bot latency"),
             (",dashboard", "Open the Mikasa web dashboard link"),
             (",help <question>", "Ask how to use a command"),
-            (",role @user <role name>", "Add or remove a role by name/mention/ID (spaces OK)"),
+            (",role @user", "Interactive role picker — or `,role @user <role>` to toggle one"),
+            (",roles [@user]", "List server roles or a member's roles"),
             (",setnick @user [name]", "Set nickname"),
             (",move @role above/below @role", "Move role above or below another role"),
         ],
@@ -6864,10 +6865,14 @@ HELP_CATEGORIES = {
             (",unmute @user", "Remove timeout"),
             (",warn @user [reason]", "Warn a member"),
             (",warnings [@user]", "View warnings"),
+            (",note @user <text>", "Add a staff note on a member"),
+            (",notes @user", "View staff notes on a member"),
+            (",removenote <note_id>", "Remove a staff note by ID"),
             (",purge [amount]", "Delete recent messages"),
             (",lock / ,unlock", "Lock or unlock channel"),
             (",slowmode / ,slowdown <seconds>", "Set channel slowmode"),
-            (",role @user @role", "Toggle a role on a member"),
+            (",role @user", "Interactive role toggle picker (or `,role @user <role>`)"),
+            (",roles [@user]", "List server roles or a member's roles"),
             (",autorole add/remove/list/clear @role", "Roles given automatically on join"),
             (",createrole <name> [color]", "Create a role"),
             (",editcolor <role> <#hex|name>", "Change a role color"),
@@ -7587,7 +7592,8 @@ def _ai_score_query(query: str):
         ("kick", ",kick @user", "Kick a member"),
         ("ban", ",ban @user", "Ban a member"),
         ("mute", ",mute @user 5m", "Timeout a member"),
-        ("role", ",role @user @role", "Add or remove a role"),
+        ("role", ",role @user", "Interactive role toggle or single role"),
+        ("roles", ",roles", "List server roles"),
         ("whitelist", ",whitelist @user [cats]", "Anti-nuke whitelist"),
         ("dm", ",dm @user [message]", "DM a user"),
         ("help", ",help", "Show help menu"),
@@ -8076,10 +8082,144 @@ def _resolve_role_by_name(guild: discord.Guild, query: str):
     return None, f"❌ No role found matching **{q}**."
 
 
-@bot.hybrid_command(name="role", description="Add or remove a role from a member (name, mention, or ID)")
-@app_commands.describe(member="Member", role="Role name, mention, or ID (spaces allowed)")
-async def role_cmd(ctx: commands.Context, member: discord.Member, *, role: str):
-    """Toggle a role on a member. Accepts role name (with spaces), mention, or ID."""
+class _RoleToggleSelect(discord.ui.Select):
+    """Multi-select role toggle for `,role @user` interactive mode."""
+
+    def __init__(self, target: discord.Member, roles: list, author_id: int):
+        options = []
+        for r in roles[:25]:
+            has = r in target.roles
+            options.append(discord.SelectOption(
+                label=r.name[:100],
+                value=str(r.id),
+                description=("Has role — select to remove" if has else "Select to add")[:100],
+            ))
+        super().__init__(
+            placeholder="Choose some roles...",
+            min_values=1,
+            max_values=min(len(options), 25),
+            options=options,
+        )
+        self.target = target
+        self.author_id = author_id
+
+    async def callback(self, interaction: discord.Interaction):
+        if interaction.user.id != self.author_id:
+            return await interaction.response.send_message(
+                "Only the person who ran the command can use this menu.",
+                ephemeral=True,
+            )
+        guild = interaction.guild
+        if not guild:
+            return await interaction.response.send_message("❌ Server only.", ephemeral=True)
+        me = guild.me
+        added, removed, failed = [], [], []
+        for rid in self.values:
+            role = guild.get_role(int(rid))
+            if role is None:
+                failed.append(f"`{rid}` (missing)")
+                continue
+            if me and role >= me.top_role:
+                failed.append(f"{role.mention} (above my highest role)")
+                continue
+            try:
+                if role in self.target.roles:
+                    await self.target.remove_roles(role, reason=f"role toggle by {interaction.user}")
+                    removed.append(role.mention)
+                else:
+                    await self.target.add_roles(role, reason=f"role toggle by {interaction.user}")
+                    added.append(role.mention)
+            except Exception as ex:
+                failed.append(f"{role.mention} ({type(ex).__name__})")
+        parts = []
+        if added:
+            parts.append("**Added:** " + ", ".join(added))
+        if removed:
+            parts.append("**Removed:** " + ", ".join(removed))
+        if failed:
+            parts.append("**Failed:** " + ", ".join(failed))
+        if not parts:
+            parts.append("No changes made.")
+        for child in self.view.children:
+            child.disabled = True
+        await interaction.response.edit_message(
+            content=f"{self.target.mention} — role update complete.\n" + "\n".join(parts),
+            view=None,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+        self.view.stop()
+
+
+class _RoleToggleView(discord.ui.View):
+    def __init__(self, target: discord.Member, roles: list, author_id: int, author_mention: str):
+        super().__init__(timeout=60)
+        self.author_id = author_id
+        self.author_mention = author_mention
+        self.message = None
+        self.add_item(_RoleToggleSelect(target, roles, author_id))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                "Only the person who ran the command can use this menu.",
+                ephemeral=True,
+            )
+            return False
+        return True
+
+    async def on_timeout(self):
+        if self.message is not None:
+            try:
+                await self.message.edit(
+                    content=f"{self.author_mention}, cancelled command.",
+                    view=None,
+                    allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+                )
+            except Exception:
+                pass
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
+    async def cancel(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.edit_message(
+            content=f"{self.author_mention}, cancelled command.",
+            view=None,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+        self.stop()
+
+
+def _role_cmd_manageable_roles(guild: discord.Guild, author: discord.Member) -> list:
+    """Roles the bot and author can assign (below both top roles, not managed, not @everyone)."""
+    me = guild.me
+    out = []
+    for role in sorted(guild.roles, key=lambda r: r.position, reverse=True):
+        if role.is_default() or role.managed:
+            continue
+        if me and role >= me.top_role:
+            continue
+        if not (
+            has_owner_access(author)
+            or author.id == guild.owner_id
+            or getattr(author.guild_permissions, "administrator", False)
+        ):
+            if role >= author.top_role:
+                continue
+        out.append(role)
+    return out
+
+
+@bot.hybrid_command(name="role", description="Toggle roles on a member — interactive picker or by name")
+@app_commands.describe(
+    member="Member to manage roles for",
+    role="Optional role name, mention, or ID; omit to open the role picker",
+)
+async def role_cmd(ctx: commands.Context, member: discord.Member = None, *, role: str = None):
+    """Toggle roles on a member.
+
+    • `,role` — asks for a user
+    • `,role @user` — interactive multi-select role picker (1 minute)
+    • `,role @user <role>` — toggle that one role (name / mention / ID)
+    """
     if not ctx.guild:
         return await ctx.send(embed=discord.Embed(description="❌ Server only.", color=COLORS["error"]))
 
@@ -8097,6 +8237,32 @@ async def role_cmd(ctx: commands.Context, member: discord.Member, *, role: str):
             color=COLORS["error"],
         ))
 
+    if member is None:
+        return await ctx.send("❌ Please specify a user.")
+
+    # Interactive picker when no specific role was provided
+    if not (role or "").strip():
+        manageable = _role_cmd_manageable_roles(ctx.guild, author)
+        if not manageable:
+            return await ctx.send(embed=discord.Embed(
+                description=(
+                    "❌ No roles I can manage are available.\n"
+                    "Move my role higher and ensure roles are not managed/integration roles."
+                ),
+                color=COLORS["error"],
+            ))
+        view = _RoleToggleView(member, manageable[:25], author.id, author.mention)
+        msg = await ctx.send(
+            content=(
+                f"{author.mention}, choose some roles to toggle.\n"
+                f"*This will automatically timeout in 1 minute.*"
+            ),
+            view=view,
+            allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
+        )
+        view.message = msg
+        return
+
     role_obj, err = _resolve_role_by_name(ctx.guild, role)
     if err:
         return await ctx.send(embed=discord.Embed(description=err, color=COLORS["error"]))
@@ -8106,7 +8272,6 @@ async def role_cmd(ctx: commands.Context, member: discord.Member, *, role: str):
     if not ok:
         return await ctx.send(embed=discord.Embed(description=err, color=COLORS["error"]))
 
-    # Bot hierarchy
     me = ctx.guild.me
     if me and role >= me.top_role:
         return await ctx.send(embed=discord.Embed(
@@ -8134,6 +8299,298 @@ async def role_cmd(ctx: commands.Context, member: discord.Member, *, role: str):
         ))
     except Exception as ex:
         await ctx.send(embed=discord.Embed(description=f"❌ {ex}", color=COLORS["error"]))
+
+
+@bot.hybrid_command(name="roles", description="List server roles, or a member's roles")
+@app_commands.describe(member="Optional member — show only this user's roles")
+async def roles_list_cmd(ctx: commands.Context, member: discord.Member = None):
+    """List roles.
+
+    • `,roles` — all server roles
+    • `,roles @user` — that member's roles (highest → lowest)
+    """
+    if not ctx.guild:
+        return await ctx.send(embed=discord.Embed(description="❌ Server only.", color=COLORS["error"]))
+
+    # Member-specific list (Circle-style)
+    if member is not None:
+        user_roles = [
+            r for r in sorted(member.roles, key=lambda x: x.position, reverse=True)
+            if not r.is_default()
+        ]
+        if not user_roles:
+            return await ctx.send(embed=discord.Embed(
+                title=f"{member.display_name}'s Roles (0 roles)",
+                description="This member has no custom roles.",
+                color=COLORS["info"],
+            ))
+        n = len(user_roles)
+        lines = []
+        for i, r in enumerate(user_roles):
+            rank = n - i  # highest role gets the largest number
+            count = sum(1 for m in ctx.guild.members if r in m.roles)
+            unit = "member" if count == 1 else "members"
+            lines.append(f"**#{rank:02d}** | {r.mention} ({count} {unit})")
+        desc = "\n".join(lines)
+        # Keep under embed description limit
+        if len(desc) > 3900:
+            desc = "\n".join(lines[:80]) + "\n…and more"
+        embed = discord.Embed(
+            title=f"{member.display_name}'s Roles ({n} role{'s' if n != 1 else ''})",
+            description=desc,
+            color=member.color.value if member.color.value else COLORS["info"],
+        )
+        embed.set_author(name=str(member), icon_url=member.display_avatar.url)
+        return await ctx.send(embed=embed)
+
+    # Server-wide list
+    roles = [r for r in sorted(ctx.guild.roles, key=lambda x: x.position, reverse=True) if not r.is_default()]
+    if not roles:
+        return await ctx.send(embed=discord.Embed(
+            description="This server has no custom roles.",
+            color=COLORS["info"],
+        ))
+
+    n = len(roles)
+    lines = []
+    for i, r in enumerate(roles):
+        rank = n - i
+        count = sum(1 for m in ctx.guild.members if r in m.roles)
+        unit = "member" if count == 1 else "members"
+        lines.append(f"**#{rank:02d}** | {r.mention} ({count} {unit})")
+
+    embed = discord.Embed(
+        title=f"Roles ({n} role{'s' if n != 1 else ''})",
+        color=COLORS["info"],
+    )
+    chunk, chunks, size = [], [], 0
+    for line in lines:
+        if size + len(line) + 1 > 1000 and chunk:
+            chunks.append("\n".join(chunk))
+            chunk, size = [], 0
+        chunk.append(line)
+        size += len(line) + 1
+    if chunk:
+        chunks.append("\n".join(chunk))
+    for i, c in enumerate(chunks[:25]):
+        embed.add_field(name="Roles" if i == 0 else f"Roles (cont. {i + 1})", value=c, inline=False)
+    embed.set_footer(text="Use ,roles @user to see a member's roles · ,role @user to toggle roles")
+    await ctx.send(embed=embed)
+
+
+
+# ── Staff notes on members (Circle-style) ────────────────────────────────
+def _notes_store():
+    data = load("mod_notes")
+    if not isinstance(data, dict):
+        data = {}
+    return data
+
+
+def _notes_guild(data: dict, guild_id: int) -> dict:
+    key = str(guild_id)
+    if key not in data or not isinstance(data[key], dict):
+        data[key] = {}
+    return data[key]
+
+
+def _notes_new_id(existing_ids: set) -> str:
+    """Short unique hex id like 6a5e0dcc."""
+    for _ in range(32):
+        nid = format(random.getrandbits(32), "08x")
+        if nid not in existing_ids:
+            return nid
+    return format(int(time.time()) & 0xFFFFFFFF, "08x")
+
+
+def _notes_format_date(iso_str: str) -> str:
+    try:
+        raw = str(iso_str or "").replace("Z", "+00:00")
+        dt = datetime.fromisoformat(raw)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        # Display in a readable local-style UTC label
+        return dt.strftime("%B %d, %Y %I:%M %p").lstrip("0").replace(" 0", " ")
+    except Exception:
+        return str(iso_str or "?")
+
+
+def _notes_can_manage(author, guild) -> bool:
+    if not guild or not author:
+        return False
+    return bool(
+        has_owner_access(author)
+        or author.id == guild.owner_id
+        or is_staff(author)
+        or getattr(author.guild_permissions, "moderate_members", False)
+        or getattr(author.guild_permissions, "manage_messages", False)
+    )
+
+
+@bot.hybrid_command(name="note", description="Add a staff note on a member")
+@app_commands.describe(member="Member to note", text="Note text")
+async def note_add_cmd(ctx: commands.Context, member: discord.Member = None, *, text: str = ""):
+    """`,note @user <text>` — add a private staff note on a member."""
+    if not ctx.guild:
+        return await ctx.send("❌ Server only.")
+    if not _notes_can_manage(ctx.author, ctx.guild):
+        return await ctx.send(embed=discord.Embed(
+            description="❌ Staff only (Moderate Members / Manage Messages / Admin).",
+            color=COLORS["error"],
+        ))
+    if member is None or not (text or "").strip():
+        return await ctx.send(
+            embed=discord.Embed(
+                description="Usage: `,note @user <note text>`",
+                color=COLORS["info"],
+            )
+        )
+    note_text = text.strip()[:1000]
+    data = _notes_store()
+    guild_notes = _notes_guild(data, ctx.guild.id)
+    uid = str(member.id)
+    entries = guild_notes.get(uid, [])
+    if not isinstance(entries, list):
+        entries = []
+    existing_ids = {str(e.get("id")) for e in entries if isinstance(e, dict)}
+    # Also avoid collisions with other users in this guild
+    for other in guild_notes.values():
+        if isinstance(other, list):
+            existing_ids.update(str(e.get("id")) for e in other if isinstance(e, dict))
+    nid = _notes_new_id(existing_ids)
+    entry = {
+        "id": nid,
+        "note": note_text,
+        "mod_id": ctx.author.id,
+        "mod_name": str(ctx.author),
+        "time": datetime.now(timezone.utc).isoformat(),
+    }
+    entries.append(entry)
+    guild_notes[uid] = entries
+    data[str(ctx.guild.id)] = guild_notes
+    save("mod_notes", data)
+    await ctx.send(embed=discord.Embed(
+        description=f"✅ Successfully added note to **{member.display_name}**.",
+        color=COLORS["success"],
+    ))
+
+
+@bot.hybrid_command(name="notes", description="View staff notes on a member")
+@app_commands.describe(member="Member whose notes to view")
+async def notes_view_cmd(ctx: commands.Context, member: discord.Member = None):
+    """`,notes @user` — list staff notes for a member."""
+    if not ctx.guild:
+        return await ctx.send("❌ Server only.")
+    if member is None:
+        return await ctx.send(embed=discord.Embed(
+            description="Usage: `,notes @user`",
+            color=COLORS["info"],
+        ))
+    # Staff can view anyone; members can view their own notes
+    if member.id != ctx.author.id and not _notes_can_manage(ctx.author, ctx.guild):
+        return await ctx.send(embed=discord.Embed(
+            description="❌ Staff only — you can only view your own notes.",
+            color=COLORS["error"],
+        ))
+    data = _notes_store()
+    guild_notes = _notes_guild(data, ctx.guild.id)
+    entries = guild_notes.get(str(member.id), [])
+    if not isinstance(entries, list):
+        entries = []
+    if not entries:
+        return await ctx.send(embed=discord.Embed(
+            title=f"{member.display_name}'s Notes",
+            description="No notes found.",
+            color=COLORS["info"],
+        ).set_author(name=str(member), icon_url=member.display_avatar.url))
+
+    # Newest last in storage → show newest last like the screenshot (or oldest first)
+    lines = []
+    for e in entries:
+        if not isinstance(e, dict):
+            continue
+        nid = e.get("id", "?")
+        note = str(e.get("note", ""))[:500]
+        mod_name = e.get("mod_name") or "Unknown"
+        mod_id = e.get("mod_id")
+        mod_line = f"@{mod_name}"
+        if mod_id:
+            mod_line = f"<@{mod_id}> (`{mod_id}`)"
+        when = _notes_format_date(e.get("time", ""))
+        lines.append(
+            f"**ID:** `{nid}`\n"
+            f"**Date:** {when}\n"
+            f"**Moderator:** {mod_line}\n"
+            f"**Note:** {note}"
+        )
+    body = "\n\n".join(lines)
+    if len(body) > 3900:
+        body = "\n\n".join(lines[:12])
+        if len(lines) > 12:
+            body += f"\n\n…and {len(lines) - 12} more notes."
+    embed = discord.Embed(
+        title=f"{member.display_name}'s Notes",
+        description=f"**{len(entries)} note{'s' if len(entries) != 1 else ''} found**\n\n{body}",
+        color=COLORS["dark"],
+    )
+    embed.set_author(name=str(member), icon_url=member.display_avatar.url)
+    embed.set_footer(text=f"User ID: {member.id}")
+    await ctx.send(embed=embed)
+
+
+@bot.hybrid_command(name="removenote", aliases=["deletenote", "delnote"], description="Remove a staff note by ID")
+@app_commands.describe(note_id="Note ID (shown in ,notes)")
+async def note_remove_cmd(ctx: commands.Context, note_id: str = ""):
+    """`,removenote <note_id>` — delete a note in this server by its short ID."""
+    if not ctx.guild:
+        return await ctx.send("❌ Server only.")
+    if not _notes_can_manage(ctx.author, ctx.guild):
+        return await ctx.send(embed=discord.Embed(
+            description="❌ Staff only.",
+            color=COLORS["error"],
+        ))
+    nid = (note_id or "").strip().lower().lstrip("#")
+    if not nid:
+        return await ctx.send(embed=discord.Embed(
+            description="Usage: `,removenote <note_id>`\nGet IDs from `,notes @user`.",
+            color=COLORS["info"],
+        ))
+    data = _notes_store()
+    guild_notes = _notes_guild(data, ctx.guild.id)
+    found_uid = None
+    found_entry = None
+    for uid, entries in list(guild_notes.items()):
+        if not isinstance(entries, list):
+            continue
+        for e in entries:
+            if isinstance(e, dict) and str(e.get("id", "")).lower() == nid:
+                found_uid = uid
+                found_entry = e
+                break
+        if found_uid:
+            break
+    if not found_uid or not found_entry:
+        return await ctx.send(embed=discord.Embed(
+            description=f"❌ No note with ID `{nid}` found in this server.",
+            color=COLORS["error"],
+        ))
+    entries = [e for e in guild_notes.get(found_uid, []) if not (isinstance(e, dict) and str(e.get("id", "")).lower() == nid)]
+    if entries:
+        guild_notes[found_uid] = entries
+    else:
+        guild_notes.pop(found_uid, None)
+    data[str(ctx.guild.id)] = guild_notes
+    save("mod_notes", data)
+    target_mention = f"<@{found_uid}>"
+    note_preview = str(found_entry.get("note", ""))[:120]
+    await ctx.send(embed=discord.Embed(
+        description=(
+            f"✅ Removed note `{nid}` from {target_mention}.\n"
+            f"**Note was:** {note_preview}"
+        ),
+        color=COLORS["success"],
+    ))
+
 
 
 def _parse_color(raw: str) -> int:
