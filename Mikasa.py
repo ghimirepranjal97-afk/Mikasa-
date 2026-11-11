@@ -6850,7 +6850,7 @@ HELP_CATEGORIES = {
             (",ping", "Bot latency"),
             (",dashboard", "Open the Mikasa web dashboard link"),
             (",help <question>", "Ask how to use a command"),
-            (",role @user", "Interactive role picker — or `,role @user <role>` to toggle one"),
+            (",role @user", "Interactive multi-select role toggle — or `,role @user <role>` / `/role`)"),
             (",roles [@user]", "List server roles or a member's roles"),
             (",setnick @user [name]", "Set nickname"),
             (",move @role above/below @role", "Move role above or below another role"),
@@ -6886,7 +6886,7 @@ HELP_CATEGORIES = {
             (",purge [amount]", "Delete recent messages"),
             (",lock / ,unlock", "Lock or unlock channel"),
             (",slowmode / ,slowdown <seconds>", "Set channel slowmode"),
-            (",role @user", "Interactive role toggle picker (or `,role @user <role>`)"),
+            (",role @user", "Interactive multi-select role toggle (or `,role @user <role>` / `/role`)"),
             (",roles [@user]", "List server roles or a member's roles"),
             (",autorole add/remove/list/clear @role", "Roles given automatically on join"),
             (",createrole <name> [color]", "Create a role"),
@@ -8127,25 +8127,53 @@ class _RoleToggleSelect(discord.ui.Select):
         guild = interaction.guild
         if not guild:
             return await interaction.response.send_message("❌ Server only.", ephemeral=True)
+
+        await interaction.response.defer()
+
         me = guild.me
+        # Refresh member so role membership is current
+        target = guild.get_member(self.target.id)
+        if target is None:
+            try:
+                target = await guild.fetch_member(self.target.id)
+            except Exception:
+                target = self.target
+        self.target = target
+
         added, removed, failed = [], [], []
         for rid in self.values:
             role = guild.get_role(int(rid))
             if role is None:
                 failed.append(f"`{rid}` (missing)")
                 continue
+            if role.is_default() or role.managed:
+                failed.append(f"**{role.name}** (cannot manage)")
+                continue
             if me and role >= me.top_role:
                 failed.append(f"**{role.name}** (above my highest role)")
                 continue
+            actor = interaction.user
+            if isinstance(actor, discord.Member):
+                if not (
+                    has_owner_access(actor)
+                    or actor.id == guild.owner_id
+                    or getattr(actor.guild_permissions, "administrator", False)
+                ):
+                    if role >= actor.top_role:
+                        failed.append(f"**{role.name}** (above your highest role)")
+                        continue
             try:
-                if role in self.target.roles:
-                    await self.target.remove_roles(role, reason=f"role toggle by {interaction.user}")
+                if role in target.roles:
+                    await target.remove_roles(role, reason=f"role toggle by {interaction.user}")
                     removed.append(f"**{role.name}**")
                 else:
-                    await self.target.add_roles(role, reason=f"role toggle by {interaction.user}")
+                    await target.add_roles(role, reason=f"role toggle by {interaction.user}")
                     added.append(f"**{role.name}**")
+            except discord.Forbidden:
+                failed.append(f"**{role.name}** (missing Manage Roles / hierarchy)")
             except Exception as ex:
                 failed.append(f"**{role.name}** ({type(ex).__name__})")
+
         parts = []
         if added:
             parts.append("**Added:** " + ", ".join(added))
@@ -8155,31 +8183,42 @@ class _RoleToggleSelect(discord.ui.Select):
             parts.append("**Failed:** " + ", ".join(failed))
         if not parts:
             parts.append("No changes made.")
+
         for child in self.view.children:
             child.disabled = True
-        # Embed + no mentions so the target user and role holders are not pinged
+
         color = COLORS["success"] if (added or removed) and not failed else (COLORS["warn"] if failed else COLORS["info"])
         embed = discord.Embed(
             title="Role update complete",
             description=(
-                f"**Member:** {self.target.display_name}\n"
+                f"**Member:** {target.display_name}\n"
                 + "\n".join(parts)
             ),
             color=color,
         )
-        embed.set_footer(text=f"Updated by {interaction.user.display_name}")
-        await interaction.response.edit_message(
-            content=None,
-            embed=embed,
-            view=None,
-            allowed_mentions=discord.AllowedMentions.none(),
-        )
+        if failed and not (added or removed):
+            embed.set_footer(text="Put Mikasa's role above the target roles and ensure Manage Roles is enabled.")
+        else:
+            embed.set_footer(text=f"Updated by {interaction.user.display_name}")
+
+        try:
+            await interaction.edit_original_response(
+                content=None,
+                embed=embed,
+                view=None,
+                allowed_mentions=discord.AllowedMentions.none(),
+            )
+        except Exception:
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except Exception:
+                pass
         self.view.stop()
 
 
 class _RoleToggleView(discord.ui.View):
     def __init__(self, target: discord.Member, roles: list, author_id: int, author_mention: str):
-        super().__init__(timeout=60)
+        super().__init__(timeout=120)
         self.author_id = author_id
         self.author_mention = author_mention
         self.message = None
@@ -8244,7 +8283,7 @@ async def role_cmd(ctx: commands.Context, member: discord.Member = None, *, role
     """Toggle roles on a member.
 
     • `,role` — asks for a user
-    • `,role @user` — interactive multi-select role picker (1 minute)
+    • `,role @user` — interactive multi-select role picker (2 minutes)
     • `,role @user <role>` — toggle that one role (name / mention / ID)
     """
     if not ctx.guild:
@@ -8282,7 +8321,7 @@ async def role_cmd(ctx: commands.Context, member: discord.Member = None, *, role
         msg = await ctx.send(
             content=(
                 f"{author.mention}, choose some roles to toggle.\n"
-                f"*This will automatically timeout in 1 minute.*"
+                f"*This will automatically timeout in 2 minutes.*"
             ),
             view=view,
             allowed_mentions=discord.AllowedMentions(users=True, roles=False, everyone=False),
@@ -13284,10 +13323,12 @@ class TicketFormModal(discord.ui.Modal):
                         description=f"❌ You already have an open ticket: {existing.mention}",
                         color=COLORS["error"],
                     ),
-                    ephemeral=False,
+                    ephemeral=True,
                 )
 
-        await interaction.response.defer(ephemeral=False)
+        # Ephemeral only — never posts a public message in the panel channel,
+        # so the panel cannot be deleted and non-staff never see "#unknown".
+        await interaction.response.defer(ephemeral=True)
         try:
             ch, num = await _create_ticket_channel(
                 guild, user,
@@ -13297,20 +13338,15 @@ class TicketFormModal(discord.ui.Modal):
             )
             await interaction.followup.send(
                 embed=discord.Embed(
-                    description=f"✅ Ticket created: {ch.mention}", color=COLORS["success"]
+                    description=f"✅ Ticket created: {ch.mention}",
+                    color=COLORS["success"],
                 ),
-                ephemeral=False,
+                ephemeral=True,
             )
-            # Auto-delete the confirmation after 5 seconds
-            try:
-                msg = await interaction.original_response()
-                await msg.delete(delay=5)
-            except Exception:
-                pass
         except Exception as ex:
             await interaction.followup.send(
                 embed=discord.Embed(description=f"❌ Could not create ticket: `{ex}`", color=COLORS["error"]),
-                ephemeral=False,
+                ephemeral=True,
             )
 
 
@@ -17507,4 +17543,3 @@ if __name__ == "__main__":
         traceback.print_exc()
         print("=" * 60)
         raise
-        
